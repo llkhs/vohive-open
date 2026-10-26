@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/iniwex5/quectel-qmi-go/pkg/qmi"
 	qmimanager "github.com/iniwex5/quectel-qmi-go/pkg/manager"
-	qmipkg "github.com/iniwex5/vohive/internal/qmi"
+	"github.com/iniwex5/quectel-qmi-go/pkg/qmi"
 	"github.com/iniwex5/vohive/internal/backend"
 	"github.com/iniwex5/vohive/internal/config"
+	qmipkg "github.com/iniwex5/vohive/internal/qmi"
 	"github.com/iniwex5/vohive/pkg/logger"
 )
 
@@ -96,19 +96,23 @@ func ensureQMIRegistration(ctx context.Context, deviceID string, cfg config.Devi
 	if isFlightOperatingMode(mode) {
 		logger.Info("QMI radio 初始处于飞行/低功耗，恢复 Online 后再驻网", "device", deviceID, "mode", int(mode))
 		if err := ctrl.SetOperatingMode(ctx, backend.ModeOnline); err != nil {
-			return fmt.Errorf("QMI radio mode 恢复 Online 失败: %w", err)
-		}
-		radioRestoredOnline = true
-		if err := sleepQMIRegistrationPoll(ctx, opts.PollInterval); err != nil {
-			return err
-		}
-		mode, err = ctrl.GetOperatingMode(ctx)
-		if err != nil {
-			return fmt.Errorf("恢复 Online 后读取 QMI radio mode 失败: %w", err)
-		}
-		logger.Debug("QMI radio mode 恢复后复查", "device", deviceID, "mode", int(mode))
-		if isFlightOperatingMode(mode) {
-			return fmt.Errorf("QMI radio mode 仍处于飞行/低功耗，无法驻网: mode=%d", int(mode))
+			if !isUnsupportedQMIOperatingModeError(err) {
+				return fmt.Errorf("QMI radio mode 恢复 Online 失败: %w", err)
+			}
+			logger.Info("设备不支持通过 QMI DMS 切换无线模式，继续尝试驻网", "device", deviceID, "err", err)
+		} else {
+			radioRestoredOnline = true
+			if err := sleepQMIRegistrationPoll(ctx, opts.PollInterval); err != nil {
+				return err
+			}
+			mode, err = ctrl.GetOperatingMode(ctx)
+			if err != nil {
+				return fmt.Errorf("恢复 Online 后读取 QMI radio mode 失败: %w", err)
+			}
+			logger.Debug("QMI radio mode 恢复后复查", "device", deviceID, "mode", int(mode))
+			if isFlightOperatingMode(mode) {
+				return fmt.Errorf("QMI radio mode 仍处于飞行/低功耗，无法驻网: mode=%d", int(mode))
+			}
 		}
 	}
 
@@ -323,6 +327,18 @@ func isUnsupportedQMIForceNetworkSearchError(err error) bool {
 	}
 	return qmiErr.Service == 0x03 &&
 		qmiErr.MessageID == qmi.NASForceNetworkSearch &&
+		(qmiErr.ErrorCode == qmi.QMIErrNotSupported ||
+			qmiErr.ErrorCode == qmi.QMIErrInvalidQmiCmd ||
+			qmiErr.ErrorCode == qmi.QMIErrOpDeviceUnsupported)
+}
+
+func isUnsupportedQMIOperatingModeError(err error) bool {
+	var qmiErr *qmi.QMIError
+	if !errors.As(err, &qmiErr) || qmiErr == nil {
+		return false
+	}
+	return qmiErr.Service == qmi.ServiceDMS &&
+		qmiErr.MessageID == qmi.DMSSetOperatingMode &&
 		(qmiErr.ErrorCode == qmi.QMIErrNotSupported ||
 			qmiErr.ErrorCode == qmi.QMIErrInvalidQmiCmd ||
 			qmiErr.ErrorCode == qmi.QMIErrOpDeviceUnsupported)

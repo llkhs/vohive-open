@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/iniwex5/quectel-qmi-go/pkg/qmi"
 	qmimanager "github.com/iniwex5/quectel-qmi-go/pkg/manager"
+	"github.com/iniwex5/quectel-qmi-go/pkg/qmi"
 	"github.com/iniwex5/vohive/internal/backend"
 	"github.com/iniwex5/vohive/internal/config"
 )
@@ -17,8 +17,10 @@ type qmiRegistrationTestController struct {
 	simStatuses []qmi.SIMStatus
 	servingSeq  []*backend.ServingSystem
 	opMode      backend.OperatingMode
+	opModeSet   bool
 
 	registerErr                   error
+	setModeErr                    error
 	forceNetworkSearchErr         error
 	allowManualRegister           bool
 	registerReqs                  []backend.NASRegisterRequest
@@ -84,7 +86,7 @@ func (s *qmiRegistrationTestController) NASAttachDetach(ctx context.Context, att
 }
 
 func (s *qmiRegistrationTestController) GetOperatingMode(ctx context.Context) (backend.OperatingMode, error) {
-	if s.opMode == 0 {
+	if !s.opModeSet && s.opMode == 0 {
 		return backend.ModeOnline, nil
 	}
 	return s.opMode, nil
@@ -92,7 +94,11 @@ func (s *qmiRegistrationTestController) GetOperatingMode(ctx context.Context) (b
 
 func (s *qmiRegistrationTestController) SetOperatingMode(ctx context.Context, mode backend.OperatingMode) error {
 	s.setModeCalls = append(s.setModeCalls, mode)
+	if s.setModeErr != nil {
+		return s.setModeErr
+	}
 	s.opMode = mode
+	s.opModeSet = true
 	return nil
 }
 
@@ -145,6 +151,33 @@ func TestEnsureQMIRegistrationWaitsForSIMReady(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("ensureQMIRegistration() error = %v", err)
+	}
+}
+
+func TestEnsureQMIRegistrationContinuesWhenDMSModeSwitchUnsupported(t *testing.T) {
+	ctrl := &qmiRegistrationTestController{
+		opMode:    backend.ModeLowPower,
+		opModeSet: true,
+		setModeErr: &qmi.QMIError{
+			Service:   qmi.ServiceDMS,
+			MessageID: qmi.DMSSetOperatingMode,
+			Result:    0x0001,
+			ErrorCode: qmi.QMIErrOpDeviceUnsupported,
+		},
+		simStatuses: []qmi.SIMStatus{qmi.SIMReady},
+		servingSeq: []*backend.ServingSystem{
+			{RegStatus: 1, RegStatusText: "已注册(本地)", PSAttached: true},
+		},
+	}
+
+	if err := ensureQMIRegistration(context.Background(), "dev-qmi", config.DeviceConfig{}, ctrl, ctrl, qmiRegistrationOptions{
+		PollInterval: time.Nanosecond,
+		MaxAttempts:  1,
+	}); err != nil {
+		t.Fatalf("ensureQMIRegistration() error = %v", err)
+	}
+	if len(ctrl.setModeCalls) != 1 || ctrl.setModeCalls[0] != backend.ModeOnline {
+		t.Fatalf("setModeCalls=%v want [%v]", ctrl.setModeCalls, backend.ModeOnline)
 	}
 }
 

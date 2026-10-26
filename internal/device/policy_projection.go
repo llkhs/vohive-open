@@ -121,6 +121,10 @@ func (p *Pool) exitAirplaneModeIfNeeded(w *Worker, reason string) {
 		return
 	}
 	if err := ctrl.SetOperatingMode(p.ctx, backend.ModeOnline); err != nil {
+		if isUnsupportedQMIOperatingModeError(err) {
+			logger.Info("设备不支持通过 QMI DMS 退出飞行模式", "device", w.ID, "reason", reason, "err", err)
+			return
+		}
 		logger.Warn("退出飞行模式失败", "device", w.ID, "reason", reason, "err", err)
 		return
 	}
