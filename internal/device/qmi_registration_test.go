@@ -3,6 +3,7 @@ package device
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -178,6 +179,30 @@ func TestEnsureQMIRegistrationContinuesWhenDMSModeSwitchUnsupported(t *testing.T
 	}
 	if len(ctrl.setModeCalls) != 1 || ctrl.setModeCalls[0] != backend.ModeOnline {
 		t.Fatalf("setModeCalls=%v want [%v]", ctrl.setModeCalls, backend.ModeOnline)
+	}
+}
+
+func TestEnsureQMIRegistrationFailsClearlyInFactoryTestMode(t *testing.T) {
+	ctrl := &qmiRegistrationTestController{
+		opMode:    backend.ModeFactoryTest,
+		opModeSet: true,
+		setModeErr: &qmi.QMIError{
+			Service:   qmi.ServiceDMS,
+			MessageID: qmi.DMSSetOperatingMode,
+			Result:    0x0001,
+			ErrorCode: qmi.QMIErrOpDeviceUnsupported,
+		},
+	}
+
+	err := ensureQMIRegistration(context.Background(), "dev-qmi", config.DeviceConfig{}, ctrl, ctrl, qmiRegistrationOptions{
+		PollInterval: time.Nanosecond,
+		MaxAttempts:  1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "工厂测试模式") {
+		t.Fatalf("ensureQMIRegistration() error=%v, want factory-test-mode error", err)
+	}
+	if ctrl.registerCalls != 0 {
+		t.Fatalf("registerCalls=%d want 0", ctrl.registerCalls)
 	}
 }
 

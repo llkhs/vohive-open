@@ -93,6 +93,23 @@ func ensureQMIRegistration(ctx context.Context, deviceID string, cfg config.Devi
 	}
 	logger.Debug("QMI radio mode 初始检查", "device", deviceID, "mode", int(mode))
 	radioRestoredOnline := false
+	if mode == backend.ModeFactoryTest {
+		logger.Warn("QMI radio 处于工厂测试模式，尝试切回 Online", "device", deviceID)
+		if err := ctrl.SetOperatingMode(ctx, backend.ModeOnline); err != nil {
+			return fmt.Errorf("QMI radio 处于工厂测试模式且无法切换到 Online: %w", err)
+		}
+		radioRestoredOnline = true
+		if err := sleepQMIRegistrationPoll(ctx, opts.PollInterval); err != nil {
+			return err
+		}
+		mode, err = ctrl.GetOperatingMode(ctx)
+		if err != nil {
+			return fmt.Errorf("工厂测试模式恢复后读取 QMI radio mode 失败: %w", err)
+		}
+		if mode == backend.ModeFactoryTest {
+			return fmt.Errorf("QMI radio 仍处于工厂测试模式，无法驻网")
+		}
+	}
 	if isFlightOperatingMode(mode) {
 		logger.Info("QMI radio 初始处于飞行/低功耗，恢复 Online 后再驻网", "device", deviceID, "mode", int(mode))
 		if err := ctrl.SetOperatingMode(ctx, backend.ModeOnline); err != nil {

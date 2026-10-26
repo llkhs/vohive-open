@@ -236,6 +236,12 @@ func TestQMIOperatingModeToBackendTreatsOfflineAsLowPower(t *testing.T) {
 	}
 }
 
+func TestQMIOperatingModeToBackendPreservesFactoryTestMode(t *testing.T) {
+	if got := qmiOperatingModeToBackend(qmi.ModeFactoryTest); got != ModeFactoryTest {
+		t.Fatalf("qmiOperatingModeToBackend(ModeFactoryTest)=%d want %d", got, ModeFactoryTest)
+	}
+}
+
 func TestModemUSSDResultMapsAPIFields(t *testing.T) {
 	in := &modem.USSDResult{
 		Status:  1,

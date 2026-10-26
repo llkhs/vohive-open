@@ -922,6 +922,8 @@ func qmiOperatingModeToBackend(qmiMode qmi.OperatingMode) OperatingMode {
 	switch qmiMode {
 	case qmi.ModeOnline:
 		return ModeOnline
+	case qmi.ModeFactoryTest:
+		return ModeFactoryTest
 	case qmi.ModeLowPower, qmi.ModeOffline, qmi.ModeShutdown, qmi.ModeOnlyLowPower:
 		return ModeLowPower
 	case qmi.ModePersistLow:

@@ -94,7 +94,8 @@ type SMSSummary struct {
 type OperatingMode int
 
 const (
-	ModeOnline   OperatingMode = 1 // AT+CFUN=1 / DMS ModeOnline
-	ModeLowPower OperatingMode = 0 // AT+CFUN=0 / DMS ModeLowPower
-	ModeRFOff    OperatingMode = 4 // AT+CFUN=4 / DMS ModePersistLow (飞行模式)
+	ModeOnline      OperatingMode = 1 // AT+CFUN=1 / DMS ModeOnline
+	ModeLowPower    OperatingMode = 0 // AT+CFUN=0 / DMS ModeLowPower
+	ModeRFOff       OperatingMode = 4 // AT+CFUN=4 / DMS ModePersistLow (飞行模式)
+	ModeFactoryTest OperatingMode = 2 // DMS ModeFactoryTest; not a usable radio state
 )
