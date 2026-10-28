@@ -521,7 +521,7 @@ func (w *Worker) startQMIRegistrationReconcile(ctx context.Context, reason strin
 
 	go func() {
 		start := time.Now()
-		runCtx, cancel := context.WithCancel(ctx)
+		runCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		if w.stop != nil {
 			done := make(chan struct{})
