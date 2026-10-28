@@ -1807,9 +1807,12 @@ func (s *Server) handleStatic(c *gin.Context) {
 
 func (s *Server) handleSystemInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"version":    global.Version,
-		"build_time": global.BuildTime,
-		"config":     viper.ConfigFileUsed(),
-		"docs":       currentAPIDocsLinks(),
+		"version":     global.DisplayVersion(),
+		"raw_version": global.Version,
+		"git_commit":  global.ShortGitCommit(),
+		"full_commit": global.GitCommit,
+		"build_time":  global.BuildTime,
+		"config":      viper.ConfigFileUsed(),
+		"docs":        currentAPIDocsLinks(),
 	})
 }

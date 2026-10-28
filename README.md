@@ -74,6 +74,10 @@ VoHive 把模组热插拔管理、SOCKS5/HTTP 代理编排、短信收发、VoWi
 | 全渠道通知 | 重要短信及系统告警可推送至 Telegram、Email、PushPlus、Bark、飞书(Lark/Feishu)、QQ 等 |
 | 多架构构建 | 原生支持 amd64 / arm64 / arm7 跨平台编译,路由器到边缘节点均可部署 |
 
+## 硬件适配指南
+
+- **[高通 410 (MSM8916) 随身 WiFi 棒子 (丝印 SP970-B-V13) 适配与加固指南](docs/hardware/qualcomm-410-sp970-b-v13.md)**: 针对搭载高通骁龙 410 (MSM8916) 芯片、板载丝印为 **`SP970-B-V13`** 的随身 WiFi 棒子在部署 Debian/Armbian 时的掉卡、Band 5 电信定制固件搜网死锁、CPU 100% 狂转高负载发烫以及境外漫游卡防高额流量消耗等问题，提供完整的根因分析、频段锁定工具与一键配置脚本。
+
 ## 典型应用场景
 
 - **私有 IP 代理池**:单主机挂载多张物理 SIM 卡或多张 eSIM,每张网卡对应独立的 SOCKS5/HTTP 实例,组建自己的移动网络代理。

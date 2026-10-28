@@ -380,6 +380,9 @@ onBeforeUnmount(() => {
                 </div>
               </FieldRow>
             </div>
+            <div v-if="systemInfo.git_commit" class="p-3 bg-gray-50 dark:bg-white/5 rounded-lg">
+              <FieldRow label="版本哈希" :value="systemInfo.git_commit" monospace copyable />
+            </div>
             
             <div v-if="updateInfo?.has_update" class="p-4 bg-amber-50 dark:bg-amber-500/10 rounded-lg border border-amber-200 dark:border-amber-500/20">
                <div class="flex items-center gap-2 text-amber-800 dark:text-amber-200 mb-2 font-bold text-[13px]">

@@ -17,6 +17,9 @@ export type UpdateInfo = {
 
 export type SystemInfo = {
   version: string
+  raw_version?: string
+  git_commit?: string
+  full_commit?: string
   build_time: string
   config: string
   docs: DocsLinks
