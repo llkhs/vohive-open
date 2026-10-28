@@ -46,6 +46,24 @@ const hasValidEmailConfig = computed(() => {
   )
 })
 
+const formattedBuildTime = computed(() => {
+  const time = systemInfo.value?.build_time
+  if (!time || time === 'Unknown') return time || '--'
+  try {
+    const d = new Date(time)
+    if (isNaN(d.getTime())) return time
+    const yyyy = d.getFullYear()
+    const MM = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    const HH = String(d.getHours()).padStart(2, '0')
+    const mm = String(d.getMinutes()).padStart(2, '0')
+    const ss = String(d.getSeconds()).padStart(2, '0')
+    return `${yyyy}-${MM}-${dd} ${HH}:${mm}:${ss}`
+  } catch {
+    return time
+  }
+})
+
 
 async function changePassword() {
   if (passwordForm.value.new_password !== passwordForm.value.confirm_password) {
@@ -396,7 +414,7 @@ onBeforeUnmount(() => {
                </el-button>
             </div>
             <div class="p-3 bg-gray-50 dark:bg-white/5 rounded-lg">
-              <FieldRow label="构建时间" :value="systemInfo.build_time" monospace />
+              <FieldRow label="构建时间" :value="formattedBuildTime" monospace copyable />
             </div>
             <div class="p-3 bg-gray-50 dark:bg-white/5 rounded-lg">
               <FieldRow label="配置路径" :value="systemInfo.config" monospace copyable />
