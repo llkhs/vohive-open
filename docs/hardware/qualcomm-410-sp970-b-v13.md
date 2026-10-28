@@ -63,18 +63,31 @@
 
 如果你有另一块一模一样的 **SP970-B-V13** 棒子，刷好 Debian / Armbian 固件后，**只需执行一键部署脚本即可完成全部配置**：
 
-### 极速部署（推荐）
+### 极速部署（推荐两种方式）
 
-1. **将编译好的发布资产上传至棒子 `/root` 目录**：
-   - `vohive_dev_linux_arm64`（或 `vohive`）
-   - `lock-band3_arm64`（可选，重命名为 `lock-band3`）
-   - `mcc-mnc-table.json`（可选）
-   - `install.sh`（位于项目 [`scripts/install.sh`](file:///D:/OT/vohive-open/scripts/install.sh)）
+#### 方式一：使用一站式全量发布包（推荐，全部预装无需逐一收集）
+在 GitHub Releases 中直接下载专为 SP970 / ARM64 打包的完整整合包 **`vohive_sp970_arm64_bundle.tar.gz`**：
+```bash
+# 上传压缩包并解压进入目录，直接执行一键安装
+tar -zxvf vohive_sp970_arm64_bundle.tar.gz
+cd vohive_sp970_arm64
+bash install.sh
+```
 
-2. **在棒子上以 root 身份运行一键安装脚本**：
-   ```bash
-   bash install.sh
-   ```
+#### 方式二：手动上传部署文件（需携带全部 4 个必选组件）
+若手动上传至棒子 `/root` 目录，**必须携带以下全部组件**（各组件分工与缺失后果如下）：
+
+| 文件名称 | 是否必选 | 关键作用说明 | 若缺失或未放置的后果 |
+| :--- | :---: | :--- | :--- |
+| **`vohive`** | **必选** | VoHive 服务端主程序（包含 API、Web 前端界面与短信引擎）。 | 服务无法运行。 |
+| **`lock-band3`** | **必选** | **核心频段锁定工具**。通过 QMI NAS 协议永久将基带频段锁定在 Band 1+3 (0x05)。 | **致命**：棒子固件会默认优先搜寻电信 850MHz (Band 5)，导致爱沙尼亚卡、英国卡等漫游卡及联通卡被电信核心网拒绝并触发 3GPP 退避死锁，**永远搜不到信号、无法驻网**。 |
+| **`mcc-mnc-table.json`** | **必选** | **全球运营商离线代码字典**。将 SIM 卡 IMSI/MCC-MNC 代码直接本地翻译为中文运营商（如“中国联通”）。 | 棒子如果处于国内且无外网加速，启动时无法在线连接 jsdelivr 或 GitHub Raw 下载该表，导致 Web 页面**无法显示运营商名称，仅能显示生硬的纯数字或空白**。 |
+| **`install.sh`** | **必选** | 一键全自动配置脚本（位于仓库 `scripts/install.sh`）。 | 需要手动配置 systemd、网络规则与目录权限。 |
+
+上传完成后，以 root 权限执行：
+```bash
+bash install.sh
+```
 
    **脚本将自动执行以下全套工序**：
    - 自动识别 ARM64 架构并安装 `socat`, `usbutils`, `pciutils`, `libqmi-utils`, `perl-base`。

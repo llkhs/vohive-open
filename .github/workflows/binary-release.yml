@@ -158,6 +158,19 @@ jobs:
             cp dist/lock-band3 "out/${LOCK_OUT}"
             sha256sum "out/${LOCK_OUT}" > "out/${LOCK_OUT}.sha256"
           fi
+          if [ "${{ matrix.artifact_arch }}" == "arm64" ]; then
+            BUNDLE_DIR="vohive_sp970_arm64"
+            mkdir -p "${BUNDLE_DIR}"
+            cp dist/vo-hive "${BUNDLE_DIR}/vohive"
+            [ -f "dist/lock-band3" ] && cp dist/lock-band3 "${BUNDLE_DIR}/lock-band3"
+            [ -f "scripts/mcc-mnc-table.json" ] && cp scripts/mcc-mnc-table.json "${BUNDLE_DIR}/"
+            [ -f "scripts/install.sh" ] && cp scripts/install.sh "${BUNDLE_DIR}/"
+            mkdir -p "${BUNDLE_DIR}/hardware"
+            [ -f "scripts/hardware/sp970-setup.sh" ] && cp scripts/hardware/sp970-setup.sh "${BUNDLE_DIR}/hardware/"
+            [ -f "scripts/hardware/fix-cpu-loop.sh" ] && cp scripts/hardware/fix-cpu-loop.sh "${BUNDLE_DIR}/hardware/"
+            tar -czvf "out/vohive_sp970_arm64_bundle.tar.gz" "${BUNDLE_DIR}"
+            sha256sum "out/vohive_sp970_arm64_bundle.tar.gz" > "out/vohive_sp970_arm64_bundle.tar.gz.sha256"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

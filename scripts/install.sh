@@ -105,10 +105,10 @@ mkdir -p "$VOHIVE_DIR"/{bin,config,data,logs}
 echo "[*] 部署二进制 → $BIN_PATH"
 install -m 0755 "$SRC_BIN" "$BIN_PATH"
 
-# ── 7. 部署 MCC/MNC 运营商表 ──────────────────────────────────
+# ── 7. 部署 MCC/MNC 运营商离线识别表 ────────────────────────
 SRC_MCC=""
 for f in "$SCRIPT_DIR/mcc-mnc-table.json" "$PWD/mcc-mnc-table.json" "/root/mcc-mnc-table.json"; do
-  if [ -f "$f" ]; then
+  if [ -f "$f" ] && [ -s "$f" ]; then
     SRC_MCC="$f"
     break
   fi
@@ -117,16 +117,46 @@ done
 if [ -n "$SRC_MCC" ]; then
   echo "[*] 部署 mcc-mnc-table.json → $DATA_DIR"
   install -m 0644 "$SRC_MCC" "$DATA_DIR/mcc-mnc-table.json"
+else
+  echo "[*] 本地未找到 mcc-mnc-table.json，尝试从镜像源下载离线运营商表..."
+  MCC_URLS=(
+    "https://cdn.jsdelivr.net/npm/mcc-mnc@latest/src/database/mcc-mnc-table.json"
+    "https://fastly.jsdelivr.net/npm/mcc-mnc@latest/src/database/mcc-mnc-table.json"
+    "https://raw.githubusercontent.com/musalbas/mcc-mnc-table/refs/heads/master/mcc-mnc-table.json"
+  )
+  for u in "${MCC_URLS[@]}"; do
+    if curl -sSL --connect-timeout 5 "$u" -o "$DATA_DIR/mcc-mnc-table.json" 2>/dev/null; then
+      if [ -s "$DATA_DIR/mcc-mnc-table.json" ]; then
+        echo "[✓] 离线运营商表下载并部署成功"
+        break
+      fi
+    fi
+  done
+  [ ! -s "$DATA_DIR/mcc-mnc-table.json" ] && echo "[!] 警告：未能下载到 mcc-mnc-table.json，前端界面可能无法离线解析运营商中文名称"
 fi
 
-# ── 8. 部署 LTE 频段锁定工具 (若存在) ─────────────────────────
-for f in "$SCRIPT_DIR/lock-band3" "$SCRIPT_DIR/hardware/lock-band3" "/root/lock-band3"; do
-  if [ -f "$f" ]; then
-    echo "[*] 安装 LTE 频段锁定工具 → /usr/local/bin/lock-band3"
-    install -m 0755 "$f" /usr/local/bin/lock-band3
+# ── 8. 部署 LTE 频段锁定工具 (lock-band3) ─────────────────────
+SRC_LOCK=""
+for f in "$SCRIPT_DIR/lock-band3" "$SCRIPT_DIR/lock-band3_arm64" "$SCRIPT_DIR/hardware/lock-band3" "/root/lock-band3"; do
+  if [ -f "$f" ] && [ -s "$f" ]; then
+    SRC_LOCK="$f"
     break
   fi
 done
+
+if [ -n "$SRC_LOCK" ]; then
+  echo "[*] 安装 LTE 频段锁定工具 → /usr/local/bin/lock-band3"
+  install -m 0755 "$SRC_LOCK" /usr/local/bin/lock-band3
+elif [ -e "/dev/wwan0qmi0" ]; then
+  echo "[*] 检测到高通 MSM8916 基带，正在从 Release 下载必备的 lock-band3 工具..."
+  curl -sSL --connect-timeout 8 "https://github.com/llkhs/vohive-open/releases/latest/download/lock-band3_arm64" -o /usr/local/bin/lock-band3 2>/dev/null || true
+  if [ -s /usr/local/bin/lock-band3 ]; then
+    chmod +x /usr/local/bin/lock-band3
+    echo "[✓] lock-band3 下载并配置成功"
+  else
+    echo "[!] 警告：未找到 lock-band3！高通 SP970 棒子若缺少频段锁，可能被电信 Band 5 信号捕获导致搜网死锁！"
+  fi
+fi
 
 # ── 9. 生成/更新配置文件 config.yaml (端口: 7676) ─────────────
 if [ ! -f "$CONFIG_PATH" ]; then
