@@ -304,6 +304,11 @@ func (w *Worker) SetOperatorSelection(ctx context.Context, req backend.SetOperat
 	// Update worker memory config
 	w.Config.OperatorSelectionMode = string(req.Mode)
 	w.Config.OperatorSelectionPLMN = req.PLMN
+	if req.Mode == backend.OperatorSelectionManual && req.PLMN != "" {
+		if norm, nerr := backend.NormalizePLMNSelection(req.PLMN); nerr == nil {
+			w.Config.OperatorSelectionPLMN = norm.PLMN
+		}
+	}
 	w.Config.OperatorSelectionRAT = string(req.RAT)
 
 	w.RefreshRuntime(ctx, "operator_selection_change")

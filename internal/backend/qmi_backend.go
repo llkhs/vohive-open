@@ -427,8 +427,11 @@ func (q *QMIBackend) GetServingSystem(ctx context.Context) (*ServingSystem, erro
 	// PLMN
 	ss.MCC = serving.MCC
 	ss.MNC = serving.MNC
-	if serving.MCC > 0 {
+	// 只有在已驻网状态（本地注册或漫游注册）下才显示运营商名称；未驻网/搜网中不虚假显示所监听物理小区的归属运营商
+	if (ss.RegStatus == 1 || ss.RegStatus == 5) && serving.MCC > 0 {
 		ss.Operator = qmiOperatorDisplay(serving.MCC, serving.MNC)
+	} else {
+		ss.Operator = ""
 	}
 	if (ss.RegStatus == 1 || ss.RegStatus == 5) && strings.TrimSpace(ss.Operator) == "" && !operatorRetried {
 		logger.Debug("QMI serving 命中已注册但运营商为空，触发一次回源",

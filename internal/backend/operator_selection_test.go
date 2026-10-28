@@ -14,6 +14,8 @@ func TestNormalizePLMNSelection(t *testing.T) {
 		wantErr   bool
 	}{
 		{plmn: "46000", mcc: "460", mnc: "00", mncLength: 2, pcs: false},
+		{plmn: "460001", mcc: "460", mnc: "01", mncLength: 2, pcs: false},
+		{plmn: "460011", mcc: "460", mnc: "11", mncLength: 2, pcs: false},
 		{plmn: "310260", mcc: "310", mnc: "260", mncLength: 3, pcs: true},
 		{plmn: "46A00", wantErr: true},
 		{plmn: "460", wantErr: true},

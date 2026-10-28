@@ -74,6 +74,14 @@ func NormalizePLMNSelection(plmn string) (OperatorSelection, error) {
 
 	mcc := plmn[:3]
 	mnc := plmn[3:]
+
+	// 兼容处理中国大陆 (MCC 460) 被误格式化为 3 位 MNC 的 6 位 PLMN（例如 460001 -> 46001, 460011 -> 46011, 460000 -> 46000）
+	// 中国大陆所有运营商 MNC 均为 2 位数
+	if mcc == "460" && len(plmn) == 6 && mnc[0] == '0' {
+		mnc = mnc[1:]
+		plmn = mcc + mnc
+	}
+
 	mncLength := len(mnc)
 	pcs := mncLength == 3
 

@@ -1102,9 +1102,13 @@ func parseNetworkScanResults(packet *Packet) []NetworkScanResult {
 				desc = string(tlv.Value[offset : offset+descLen])
 				offset += descLen
 			}
+			mncStr := fmt.Sprintf("%03d", mnc)
+			if mcc == 460 || mnc < 100 {
+				mncStr = fmt.Sprintf("%02d", mnc)
+			}
 			results = append(results, NetworkScanResult{
 				MCC:         fmt.Sprintf("%03d", mcc),
-				MNC:         fmt.Sprintf("%03d", mnc),
+				MNC:         mncStr,
 				Status:      status,
 				Description: desc,
 			})
@@ -1118,8 +1122,13 @@ func parseNetworkScanResults(packet *Packet) []NetworkScanResult {
 			if len(tlv.Value)-offset < 5 {
 				break
 			}
-			mcc := fmt.Sprintf("%03d", binary.LittleEndian.Uint16(tlv.Value[offset:offset+2]))
-			mnc := fmt.Sprintf("%03d", binary.LittleEndian.Uint16(tlv.Value[offset+2:offset+4]))
+			mccRaw := binary.LittleEndian.Uint16(tlv.Value[offset : offset+2])
+			mncRaw := binary.LittleEndian.Uint16(tlv.Value[offset+2 : offset+4])
+			mcc := fmt.Sprintf("%03d", mccRaw)
+			mnc := fmt.Sprintf("%03d", mncRaw)
+			if mccRaw == 460 || mncRaw < 100 {
+				mnc = fmt.Sprintf("%02d", mncRaw)
+			}
 			rat := tlv.Value[offset+4]
 			offset += 5
 			for j := range results {
