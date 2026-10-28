@@ -381,6 +381,9 @@ func isUnsupportedQMIOperatingModeError(err error) bool {
 
 func waitQMISIMReady(ctx context.Context, deviceID string, sim qmiSIMStatusSource, opts qmiRegistrationOptions) error {
 	for attempt := 1; attempt <= opts.MaxAttempts; attempt++ {
+		if ensurer, ok := sim.(qmiProvisioningEnsurer); ok {
+			_, _ = ensurer.EnsureSIMProvisioned(ctx, qmimanager.EnsureSIMProvisionedOptions{})
+		}
 		status, err := sim.GetSIMStatus(ctx)
 		if err != nil {
 			return fmt.Errorf("读取 QMI SIM 状态失败: %w", err)

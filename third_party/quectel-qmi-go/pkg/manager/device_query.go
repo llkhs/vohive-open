@@ -486,7 +486,8 @@ func uimRebindPrimaryGWProvisioningWithSender(ctx context.Context, slot uint8, u
 		SessionType: qmi.UIMSessionTypePrimaryGWProvisioning,
 		Activate:    false,
 	}); err != nil {
-		return fmt.Errorf("deactivate PrimaryGW provisioning: %w", err)
+		// 若当前原本不存在 Provisioning Session，deactivate 会返回 QMIErrNoEffect 或失败，
+		// 此时应宽容放行并继续执行下面的 activate，确保成功绑定 Session。
 	}
 	if err := sleepWithContext(ctx, wait); err != nil {
 		return err

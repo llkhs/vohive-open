@@ -73,6 +73,15 @@ func performStartupQMIUIMReset(deviceID string, resetter startupUIMResetter, ens
 	if resetter == nil {
 		return false
 	}
+	if readyCheck != nil {
+		checkCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		alreadyReady, err := readyCheck(checkCtx)
+		cancel()
+		if err == nil && alreadyReady {
+			logger.Debug("启动期检测到 SIM 已处于 ready 状态，跳过 QMI UIM reset", "device", deviceID)
+			return true
+		}
+	}
 	resetCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	err := resetter.UIMReset(resetCtx)
 	cancel()
@@ -94,8 +103,8 @@ func performStartupQMIUIMReset(deviceID string, resetter startupUIMResetter, ens
 	if readyCheck == nil {
 		return true
 	}
-	if waitTimeout <= 0 {
-		waitTimeout = 5 * time.Second
+	if waitTimeout <= 0 || waitTimeout < 15*time.Second {
+		waitTimeout = 15 * time.Second
 	}
 	if pollInterval <= 0 {
 		pollInterval = 250 * time.Millisecond
@@ -109,6 +118,11 @@ func performStartupQMIUIMReset(deviceID string, resetter startupUIMResetter, ens
 			logger.Debug("启动期 QMI UIM reset 后 SIM ready",
 				"device", deviceID)
 			return true
+		}
+		if ensurer != nil {
+			ensureCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			_, _ = ensurer.EnsureSIMProvisioned(ensureCtx, qmimanager.EnsureSIMProvisionedOptions{})
+			cancel()
 		}
 		if time.Now().After(deadline) {
 			logger.Warn("启动期 QMI UIM reset 后等待 SIM ready 超时",
