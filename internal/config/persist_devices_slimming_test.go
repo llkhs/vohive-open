@@ -66,3 +66,32 @@ func TestAddDeviceInFileDoesNotPersistRuntimePaths(t *testing.T) {
 		t.Fatalf("runtime paths must not be persisted, got: %+v", d)
 	}
 }
+
+func TestUpdateDeviceInFilePersistsOperatorSelection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	raw := "devices:\n- id: dev1\n  device_backend: qmi\n  modem_imei: \"867383058993207\"\n"
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	newDev := DeviceConfig{
+		ID:                    "dev1",
+		ModemIMEI:             "867383058993207",
+		DeviceBackend:         "qmi",
+		OperatorSelectionMode: "manual",
+		OperatorSelectionPLMN: "46001",
+		OperatorSelectionRAT:  "lte",
+	}
+	if err := UpdateDeviceInFile(path, "dev1", newDev); err != nil {
+		t.Fatalf("UpdateDeviceInFile() error = %v", err)
+	}
+
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	d := got.Devices[0]
+	if d.OperatorSelectionMode != "manual" || d.OperatorSelectionPLMN != "46001" || d.OperatorSelectionRAT != "lte" {
+		t.Fatalf("operator selection fields lost: %+v", d)
+	}
+}

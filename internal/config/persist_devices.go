@@ -59,6 +59,39 @@ func UpdateDeviceInFile(path string, deviceID string, newDevice DeviceConfig) er
 			deleteMapKey(n, "proxy_port")
 		}
 
+		if newDevice.MBIMTransport != "" {
+			setMapScalar(n, "mbim_transport", newDevice.MBIMTransport)
+		} else {
+			deleteMapKey(n, "mbim_transport")
+		}
+		if newDevice.ESIMTransport != "" {
+			setMapScalar(n, "esim_transport", newDevice.ESIMTransport)
+		} else {
+			deleteMapKey(n, "esim_transport")
+		}
+
+		if newDevice.OperatorSelectionMode != "" {
+			setMapScalar(n, "operator_selection_mode", newDevice.OperatorSelectionMode)
+		} else {
+			deleteMapKey(n, "operator_selection_mode")
+		}
+		if newDevice.OperatorSelectionPLMN != "" {
+			setMapScalar(n, "operator_selection_plmn", newDevice.OperatorSelectionPLMN)
+		} else {
+			deleteMapKey(n, "operator_selection_plmn")
+		}
+		if newDevice.OperatorSelectionRAT != "" {
+			setMapScalar(n, "operator_selection_rat", newDevice.OperatorSelectionRAT)
+		} else {
+			deleteMapKey(n, "operator_selection_rat")
+		}
+
+		if newDevice.USBNetMode != nil {
+			setMapInt(n, "usbnet_mode", *newDevice.USBNetMode)
+		} else {
+			deleteMapKey(n, "usbnet_mode")
+		}
+
 		return devices, nil
 	})
 }
@@ -183,6 +216,24 @@ func deviceConfigToNode(d DeviceConfig) *yaml.Node {
 	}
 	if d.ProxyPort > 0 {
 		appendMapInt(m, "proxy_port", d.ProxyPort)
+	}
+	if d.MBIMTransport != "" {
+		appendMapScalar(m, "mbim_transport", d.MBIMTransport)
+	}
+	if d.ESIMTransport != "" {
+		appendMapScalar(m, "esim_transport", d.ESIMTransport)
+	}
+	if d.OperatorSelectionMode != "" {
+		appendMapScalar(m, "operator_selection_mode", d.OperatorSelectionMode)
+	}
+	if d.OperatorSelectionPLMN != "" {
+		appendMapScalar(m, "operator_selection_plmn", d.OperatorSelectionPLMN)
+	}
+	if d.OperatorSelectionRAT != "" {
+		appendMapScalar(m, "operator_selection_rat", d.OperatorSelectionRAT)
+	}
+	if d.USBNetMode != nil {
+		appendMapInt(m, "usbnet_mode", *d.USBNetMode)
 	}
 
 	return m
