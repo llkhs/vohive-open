@@ -721,3 +721,30 @@ func TestEnsureQMIRegistrationCallsProvisioningBeforeReady(t *testing.T) {
 		t.Fatalf("expected EnsureSIMProvisioned called once, got %d", sim.ensured)
 	}
 }
+
+func TestEnsureQMIRegistrationReprovisionsSIMAfterRadioCycle(t *testing.T) {
+	sim := &fakeProvisioningSIM{statuses: []qmi.SIMStatus{qmi.SIMReady}}
+	ctrl := &qmiRegistrationTestController{
+		servingSeq: qmiSearchingServingSeq(qmiRegistrationRadioCycleAfterTries, &backend.ServingSystem{
+			RegStatus: 5, RegStatusText: "已注册(漫游)", PSAttached: true,
+		}),
+		registerErr: &qmi.QMIError{
+			Service:   0x03,
+			MessageID: qmi.NASInitiateNetworkRegister,
+			Result:    0x0001,
+			ErrorCode: qmi.QMIErrInvalidRegisterAction,
+		},
+	}
+
+	err := ensureQMIRegistration(context.Background(), "dev-qmi", config.DeviceConfig{}, sim, ctrl, qmiRegistrationOptions{
+		PollInterval: time.Nanosecond,
+		MaxAttempts:  qmiRegistrationRadioCycleAfterTries + 2,
+	})
+	if err != nil {
+		t.Fatalf("ensureQMIRegistration() error = %v", err)
+	}
+	// Initial provision + provision after radio cycle = 2
+	if sim.ensured != 2 {
+		t.Fatalf("expected EnsureSIMProvisioned called twice (before + after radio cycle), got %d", sim.ensured)
+	}
+}

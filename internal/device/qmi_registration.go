@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	qmimanager "github.com/iniwex5/quectel-qmi-go/pkg/manager"
 	"github.com/iniwex5/quectel-qmi-go/pkg/qmi"
 	"github.com/iniwex5/vohive/internal/backend"
 	"github.com/iniwex5/vohive/internal/config"
+	"github.com/iniwex5/vohive/internal/modem"
 	qmipkg "github.com/iniwex5/vohive/internal/qmi"
 	"github.com/iniwex5/vohive/pkg/logger"
 )
@@ -199,6 +201,14 @@ func ensureQMIRegistration(ctx context.Context, deviceID string, cfg config.Devi
 					if err := radioCycleQMIForRegistration(ctx, deviceID, ctrl, opts.PollInterval); err != nil {
 						logger.Warn("QMI 驻网恢复 radio cycle 失败，继续等待模组自主驻网", "device", deviceID, "err", err)
 					} else {
+						if ensurer, ok := sim.(qmiProvisioningEnsurer); ok {
+							if _, perr := ensurer.EnsureSIMProvisioned(ctx, qmimanager.EnsureSIMProvisionedOptions{}); perr != nil {
+								logger.Debug("radio cycle 后 QMI provisioning 收敛 best-effort 失败，继续等待 SIM ready", "device", deviceID, "err", perr)
+							}
+						}
+						if perr := waitQMISIMReady(ctx, deviceID, sim, opts); perr != nil {
+							logger.Warn("radio cycle 后等待 SIM ready 失败", "device", deviceID, "err", perr)
+						}
 						registerIssued = false
 						attachIssued = false
 					}
@@ -241,6 +251,14 @@ func initiateQMIRegistration(ctx context.Context, deviceID string, cfg config.De
 		}
 		err = ctrl.NASInitiateNetworkRegister(ctx, req)
 		if err != nil {
+			if cfg.ATPort != "" {
+				if atErr := tryManualRegistrationViaAT(cfg.ATPort, sel); atErr == nil {
+					logger.Info("QMI NAS 手动注册失败，已通过 AT 端口降级提交", "device", deviceID, "plmn", cfg.OperatorSelectionPLMN, "at_port", cfg.ATPort)
+					return nil
+				} else {
+					logger.Warn("QMI NAS 手动注册失败且 AT 降级也失败", "device", deviceID, "qmi_err", err, "at_err", atErr)
+				}
+			}
 			return fmt.Errorf("QMI NAS 手动注册失败: %w", err)
 		}
 		logger.Info("QMI NAS 手动注册已提交", "device", deviceID, "plmn", cfg.OperatorSelectionPLMN)
@@ -389,6 +407,46 @@ func sleepQMIRegistrationPoll(ctx context.Context, delay time.Duration) error {
 	}
 }
 
+func tryManualRegistrationViaAT(atPort string, sel backend.OperatorSelection) error {
+	atPort = strings.TrimSpace(atPort)
+	if atPort == "" {
+		return fmt.Errorf("empty at port")
+	}
+	session, err := modem.NewSerialAT(atPort, 115200, 8, 1, "N")
+	if err != nil {
+		return fmt.Errorf("open at port %s failed: %w", atPort, err)
+	}
+	defer session.Close()
+
+	cmd := formatATCOPSCommand(sel)
+	resp, err := session.Execute(cmd, 45*time.Second)
+	if err != nil {
+		return fmt.Errorf("execute %s failed: %w", cmd, err)
+	}
+	if !strings.Contains(resp, "OK") {
+		return fmt.Errorf("execute %s returned unexpected response: %s", cmd, resp)
+	}
+	return nil
+}
+
+func formatATCOPSCommand(sel backend.OperatorSelection) string {
+	if sel.Mode == backend.OperatorSelectionAutomatic || sel.PLMN == "" {
+		return "AT+COPS=0"
+	}
+	act := ""
+	switch sel.RAT {
+	case backend.OperatorRATLTE:
+		act = ",7"
+	case backend.OperatorRATWCDMA:
+		act = ",2"
+	case backend.OperatorRATGSM:
+		act = ",0"
+	case backend.OperatorRATNR5G:
+		act = ",12"
+	}
+	return fmt.Sprintf("AT+COPS=1,2,\"%s\"%s", sel.PLMN, act)
+}
+
 func (w *Worker) EnsureQMIRegistration(ctx context.Context, requiredForData bool) error {
 	err := w.ensureQMIRegistration(ctx, requiredForData)
 	return qmiRegistrationPreferenceError(err, requiredForData)
@@ -412,7 +470,12 @@ func (w *Worker) ensureQMIRegistration(ctx context.Context, requiredForData bool
 	ctx, cancel := context.WithTimeout(ctx, qmiRegistrationTimeout(requiredForData))
 	defer cancel()
 
-	return ensureQMIRegistration(ctx, w.ID, w.Config, w.QMICore, ctrl, qmiRegistrationOptions{
+	cfg := w.Config
+	if cfg.ATPort == "" {
+		cfg.ATPort = w.ResolvedATPort()
+	}
+
+	return ensureQMIRegistration(ctx, w.ID, cfg, w.QMICore, ctrl, qmiRegistrationOptions{
 		SuppressRadioCycle: w.IsOperatorScanActive,
 	})
 }

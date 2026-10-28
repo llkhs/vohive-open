@@ -9,6 +9,7 @@ import (
 
 	"github.com/iniwex5/quectel-qmi-go/pkg/qmi"
 	"github.com/iniwex5/vohive/internal/backend"
+	"github.com/iniwex5/vohive/pkg/logger"
 )
 
 var (
@@ -271,6 +272,31 @@ func (w *Worker) SetOperatorSelection(ctx context.Context, req backend.SetOperat
 	}
 
 	res, err := provider.SetOperatorSelection(ctx, req)
+	if err != nil {
+		atPort := w.ResolvedATPort()
+		if atPort != "" {
+			selReq := backend.OperatorSelection{
+				Mode: req.Mode,
+				PLMN: req.PLMN,
+				RAT:  req.RAT,
+			}
+			if req.Mode == backend.OperatorSelectionManual && req.PLMN != "" {
+				if norm, nerr := backend.NormalizePLMNSelection(req.PLMN); nerr == nil {
+					selReq.MCC = norm.MCC
+					selReq.MNC = norm.MNC
+					selReq.MNCLength = norm.MNCLength
+					selReq.IncludesPCSDigit = norm.IncludesPCSDigit
+				}
+			}
+			if atErr := tryManualRegistrationViaAT(atPort, selReq); atErr == nil {
+				logger.Info("provider 设置选网失败，已通过 AT 端口降级执行", "device", w.ID, "at_port", atPort, "err", err)
+				res = selReq
+				err = nil
+			} else {
+				logger.Warn("provider 设置选网失败且 AT 降级也失败", "device", w.ID, "provider_err", err, "at_err", atErr)
+			}
+		}
+	}
 	if err != nil {
 		return backend.OperatorSelection{}, err
 	}
