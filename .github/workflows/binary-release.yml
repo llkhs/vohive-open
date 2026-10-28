@@ -126,6 +126,12 @@ jobs:
             go build -trimpath -buildvcs=false -tags "with_utls nomsgpack" \
             -ldflags "-s -w -X 'github.com/iniwex5/vohive/internal/global.Version=${{ steps.vars.outputs.version }}' -X 'github.com/iniwex5/vohive/internal/global.GitCommit=${{ steps.vars.outputs.commit }}' -X 'github.com/iniwex5/vohive/internal/global.BuildTime=${{ steps.vars.outputs.buildtime }}'" \
             -o dist/vo-hive ./cmd/vohive
+          if [ -d "./cmd/lock-band3" ]; then
+            GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} GOARM=${{ matrix.goarm }} \
+              go build -trimpath -buildvcs=false \
+              -ldflags "-s -w" \
+              -o dist/lock-band3 ./cmd/lock-band3 || true
+          fi
 
       - name: Install UPX
         if: ${{ steps.vars.outputs.enable_upx == '1' }}
@@ -147,6 +153,11 @@ jobs:
           mkdir -p out
           cp dist/vo-hive "out/${OUT}"
           sha256sum "out/${OUT}" > "out/${OUT}.sha256"
+          if [ -f "dist/lock-band3" ]; then
+            LOCK_OUT="lock-band3_${{ matrix.artifact_arch }}"
+            cp dist/lock-band3 "out/${LOCK_OUT}"
+            sha256sum "out/${LOCK_OUT}" > "out/${LOCK_OUT}.sha256"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
