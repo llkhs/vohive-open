@@ -16,12 +16,13 @@ echo "[*] 高通 410 (SP970-B-V13) 随身 WiFi 硬件环境初始化与加固"
 echo "======================================================================"
 
 # 1. 检查并安装必要依赖
-echo "[+] 1. 正在检查并安装基础依赖 (libqmi-utils, perl-base)..."
+echo "[+] 1. 正在检查并安装基础依赖 (libqmi-utils, perl-base, cron, wireless-regdb)..."
 if command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -y >/dev/null 2>&1 || true
     command -v qmicli >/dev/null 2>&1 || apt-get install -y -qq libqmi-utils
     command -v perl >/dev/null 2>&1 || apt-get install -y -qq perl-base
+    apt-get install -y -qq cron wireless-regdb >/dev/null 2>&1 || true
 fi
 
 # 2. 彻底禁用系统自带的 ModemManager
@@ -51,8 +52,52 @@ if [ -f "$MODEM_CONF" ]; then
     chmod 600 "$MODEM_CONF"
 fi
 
-# 4. 部署 LTE 频段锁定工具 (lock-band3)
-echo "[+] 4. 正在配置 LTE 频段锁定工具 (lock-band3)..."
+# 4. 永久关闭 WiFi 节能省电模式 (防 wcn36xx 空闲休眠导致 SSH/Web 假死失联)
+echo "[+] 4. 正在配置 WiFi 永久关闭节能省电模式 (wifi.powersave=2)..."
+mkdir -p /etc/NetworkManager/conf.d
+cat << 'EOF' > /etc/NetworkManager/conf.d/default-wifi-powersave-off.conf
+[connection]
+wifi.powersave = 2
+EOF
+if systemctl is-active --quiet NetworkManager 2>/dev/null; then
+    systemctl restart NetworkManager 2>/dev/null || true
+fi
+
+# 5. 配置动态默认网关心跳探活保活机制 (防 AP 脱网/假死)
+echo "[+] 5. 正在配置动态默认网关心跳探活机制 (防止 AP 脱网/假死)..."
+cat << 'EOF' > /usr/local/bin/wifi-keepalive.sh
+#!/bin/bash
+# VoHive WiFi 动态网关探活保活脚本 (MSM8916 SP970)
+# 自动探测当前实际默认网关，适配不同路由环境 (如 192.168.1.1 / 192.168.10.1 / 10.x.x.x 等)
+GW=$(ip route show default 2>/dev/null | awk '/default/ {print $3}' | head -n 1)
+[ -z "$GW" ] && GW=$(ip route 2>/dev/null | grep -E '^default' | awk '{print $3}' | head -n 1)
+
+if [ -n "$GW" ]; then
+    ping -c 1 -W 2 "$GW" >/dev/null 2>&1 || true
+fi
+EOF
+chmod +x /usr/local/bin/wifi-keepalive.sh
+
+mkdir -p /etc/cron.d
+cat << 'EOF' > /etc/cron.d/wifi-keepalive
+*/2 * * * * root /usr/local/bin/wifi-keepalive.sh >/dev/null 2>&1
+EOF
+chmod 644 /etc/cron.d/wifi-keepalive
+systemctl restart cron 2>/dev/null || systemctl restart crond 2>/dev/null || true
+
+# 6. 优化系统虚拟内存与 Swap 换页参数 (适配 376MB 小内存，防缺页回收卡死)
+echo "[+] 6. 正在优化系统虚拟内存与 Swap 参数 (适配低内存环境)..."
+mkdir -p /etc/sysctl.d
+cat << 'EOF' > /etc/sysctl.d/99-vohive-sp970.conf
+# 针对高通 410 (376MB 可用内存) 的系统级虚拟内存调优
+# 充分利用 zram 压缩内存，防止小内存直接回收（Direct Reclaim）卡死
+vm.swappiness = 100
+vm.vfs_cache_pressure = 50
+EOF
+sysctl -p /etc/sysctl.d/99-vohive-sp970.conf >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1 || true
+
+# 7. 部署 LTE 频段锁定工具 (lock-band3)
+echo "[+] 7. 正在配置 LTE 频段锁定工具 (lock-band3)..."
 if [ -f "$SCRIPT_DIR/lock-band3" ]; then
     cp "$SCRIPT_DIR/lock-band3" /usr/local/bin/lock-band3
 elif [ -f "$SCRIPT_DIR/../../dist/lock-band3" ]; then
@@ -68,8 +113,8 @@ else
     echo "    [!] 提示：未找到预编译的 lock-band3，将使用 QMI/AT 兜底机制"
 fi
 
-# 5. 写入常驻自启动硬件初始化脚本 /usr/local/bin/modem-init.sh
-echo "[+] 5. 正在生成常驻自启硬件初始化脚本 /usr/local/bin/modem-init.sh ..."
+# 8. 写入常驻自启动硬件初始化脚本 /usr/local/bin/modem-init.sh
+echo "[+] 8. 正在生成常驻自启硬件初始化脚本 /usr/local/bin/modem-init.sh ..."
 cat << 'EOF' > /usr/local/bin/modem-init.sh
 #!/bin/bash
 # ==============================================================================
@@ -257,8 +302,8 @@ EOF
 
 chmod +x /usr/local/bin/modem-init.sh
 
-# 6. 配置开机自启 systemd 单元
-echo "[+] 6. 正在配置开机自启 systemd 单元 /etc/systemd/system/modem-init.service ..."
+# 9. 配置开机自启 systemd 单元
+echo "[+] 9. 正在配置开机自启 systemd 单元 /etc/systemd/system/modem-init.service ..."
 cat << 'EOF' > /etc/systemd/system/modem-init.service
 [Unit]
 Description=Qualcomm MSM8916 Modem Auto-Init Service
@@ -278,16 +323,16 @@ EOF
 systemctl daemon-reload
 systemctl enable modem-init.service
 
-# 7. 清空 /etc/rc.local 避免重复竞态运行
-echo "[+] 7. 确保清空 /etc/rc.local 避免重复竞态运行..."
+# 10. 清空 /etc/rc.local 避免重复竞态运行
+echo "[+] 10. 确保清空 /etc/rc.local 避免重复竞态运行..."
 cat << 'EOF' > /etc/rc.local
 #!/bin/sh -e
 exit 0
 EOF
 chmod +x /etc/rc.local
 
-# 8. 首次执行初始化与驻网
-echo "[+] 8. 正在首次执行初始化与驻网测试..."
+# 11. 首次执行初始化与驻网
+echo "[+] 11. 正在首次执行初始化与驻网测试..."
 /usr/local/bin/modem-init.sh
 
 echo "======================================================================"
@@ -296,5 +341,7 @@ echo "    - 频段策略：Band 1+3 (彻底剔除电信 Band 5 搜网死锁)"
 echo "    - 选网模式：自动适配 (漫游卡锁定中国联通 46001)"
 echo "    - 数据网络：保持断开，0 流量消耗，仅接收短信"
 echo "    - CPU 守护：彻底消除 NetworkManager 自动拨号死循环 (Load < 0.2)"
+echo "    - WiFi 守护：永久关闭节能省电 (wifi.powersave=2) + 动态网关探活保活"
+echo "    - 内存优化：vm.swappiness=100, vm.vfs_cache_pressure=50 (防小内存卡死)"
 echo "    - 开机自启：已注册 modem-init.service (Before=vohive)"
 echo "======================================================================"

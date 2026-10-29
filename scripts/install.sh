@@ -90,7 +90,7 @@ echo "[*] 检查并安装基础依赖包 (socat, usbutils, pciutils, curl)..."
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq >/dev/null 2>&1 || true
-  apt-get install -y -qq socat usbutils pciutils curl >/dev/null 2>&1 || true
+  apt-get install -y -qq socat usbutils pciutils curl cron wireless-regdb >/dev/null 2>&1 || true
 elif command -v dnf >/dev/null 2>&1; then
   dnf install -y -q socat usbutils pciutils curl >/dev/null 2>&1 || true
 elif command -v yum >/dev/null 2>&1; then
@@ -256,10 +256,10 @@ fi
 if [ -e "/dev/wwan0qmi0" ] || [ -e "/dev/wwan0at0" ]; then
   echo "----------------------------------------------------------------------"
   echo "[*] 检测到高通 410 (MSM8916) 硬件环境！"
-  echo "[*] 正在执行防掉卡、防 CPU 100% 死循环与防漫游跑流量加固..."
+  echo "[*] 正在执行防掉卡、防 CPU 死循环、WiFi 防休眠断网与虚拟内存调优加固..."
 
   SP970_SCRIPT=""
-  for s in "$SCRIPT_DIR/hardware/sp970-setup.sh" "$SCRIPT_DIR/sp970-setup.sh" "/root/setup-stick.sh" "/root/fix-modem-allnet.sh"; do
+  for s in "$SCRIPT_DIR/hardware/sp970-setup.sh" "$SCRIPT_DIR/sp970-setup.sh" "$SCRIPT_DIR/fix-modem-allnet.sh" "$PWD/fix-modem-allnet.sh" "/root/setup-stick.sh" "/root/fix-modem-allnet.sh"; do
     if [ -f "$s" ]; then
       SP970_SCRIPT="$s"
       break
@@ -283,6 +283,37 @@ if [ -e "/dev/wwan0qmi0" ] || [ -e "/dev/wwan0at0" ]; then
       sed -i 's/autoconnect=.*/autoconnect=false/g' "$MODEM_CONF" 2>/dev/null || true
       chmod 600 "$MODEM_CONF"
     fi
+
+    # 优化 1: 永久关闭 WiFi 节能省电模式
+    mkdir -p /etc/NetworkManager/conf.d
+    cat << 'PWROFF' > /etc/NetworkManager/conf.d/default-wifi-powersave-off.conf
+[connection]
+wifi.powersave = 2
+PWROFF
+    systemctl restart NetworkManager 2>/dev/null || true
+
+    # 优化 3: 动态默认网关心跳探活脚本 (防 AP 脱网/假死)
+    cat << 'KEEPALIVE' > /usr/local/bin/wifi-keepalive.sh
+#!/bin/bash
+GW=$(ip route show default 2>/dev/null | awk '/default/ {print $3}' | head -n 1)
+[ -z "$GW" ] && GW=$(ip route 2>/dev/null | grep -E '^default' | awk '{print $3}' | head -n 1)
+[ -n "$GW" ] && ping -c 1 -W 2 "$GW" >/dev/null 2>&1 || true
+KEEPALIVE
+    chmod +x /usr/local/bin/wifi-keepalive.sh
+    mkdir -p /etc/cron.d
+    cat << 'CRONEOF' > /etc/cron.d/wifi-keepalive
+*/2 * * * * root /usr/local/bin/wifi-keepalive.sh >/dev/null 2>&1
+CRONEOF
+    chmod 644 /etc/cron.d/wifi-keepalive
+    systemctl restart cron 2>/dev/null || systemctl restart crond 2>/dev/null || true
+
+    # 优化 4: 虚拟内存与 Swap 换页优化 (防 376MB 小内存缺页回收卡死)
+    mkdir -p /etc/sysctl.d
+    cat << 'SYSCTLEOF' > /etc/sysctl.d/99-vohive-sp970.conf
+vm.swappiness = 100
+vm.vfs_cache_pressure = 50
+SYSCTLEOF
+    sysctl -p /etc/sysctl.d/99-vohive-sp970.conf >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1 || true
   fi
   echo "----------------------------------------------------------------------"
 fi
