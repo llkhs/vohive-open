@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - 'debug/**'
+      - 'main'
   workflow_dispatch:
     inputs:
       version:
@@ -100,8 +103,10 @@ jobs:
             true|1|yes|on) ENABLE_UPX=1 ;;
             *) ENABLE_UPX=0 ;;
           esac
+          SHORT_COMMIT="${COMMIT_HASH:0:7}"
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "commit=${COMMIT_HASH}" >> "${GITHUB_OUTPUT}"
+          echo "short_commit=${SHORT_COMMIT}" >> "${GITHUB_OUTPUT}"
           echo "buildtime=${BUILDTIME}" >> "${GITHUB_OUTPUT}"
           echo "enable_upx=${ENABLE_UPX}" >> "${GITHUB_OUTPUT}"
 
@@ -149,15 +154,27 @@ jobs:
       - name: Package artifact
         shell: bash
         run: |
-          OUT="vohive_${{ steps.vars.outputs.version }}_linux_${{ matrix.artifact_arch }}"
+          SHORT_SHA="${{ steps.vars.outputs.short_commit }}"
+          OUT_HASH="vohive_${{ steps.vars.outputs.version }}_linux_${{ matrix.artifact_arch }}_${SHORT_SHA}"
+          OUT_STD="vohive_${{ steps.vars.outputs.version }}_linux_${{ matrix.artifact_arch }}"
           mkdir -p out
-          cp dist/vo-hive "out/${OUT}"
-          sha256sum "out/${OUT}" > "out/${OUT}.sha256"
+
+          # 产物带上版本短哈希
+          cp dist/vo-hive "out/${OUT_HASH}"
+          sha256sum "out/${OUT_HASH}" > "out/${OUT_HASH}.sha256"
+          # 同步保留标准名称文件副本，方便固定脚本通用下载
+          cp dist/vo-hive "out/${OUT_STD}"
+          sha256sum "out/${OUT_STD}" > "out/${OUT_STD}.sha256"
+
           if [ -f "dist/lock-band3" ]; then
             LOCK_OUT="lock-band3_${{ matrix.artifact_arch }}"
+            LOCK_OUT_HASH="lock-band3_${{ matrix.artifact_arch }}_${SHORT_SHA}"
+            cp dist/lock-band3 "out/${LOCK_OUT_HASH}"
+            sha256sum "out/${LOCK_OUT_HASH}" > "out/${LOCK_OUT_HASH}.sha256"
             cp dist/lock-band3 "out/${LOCK_OUT}"
             sha256sum "out/${LOCK_OUT}" > "out/${LOCK_OUT}.sha256"
           fi
+
           if [ "${{ matrix.artifact_arch }}" == "arm64" ]; then
             BUNDLE_DIR="vohive_sp970_arm64"
             mkdir -p "${BUNDLE_DIR}"
@@ -170,7 +187,11 @@ jobs:
             mkdir -p "${BUNDLE_DIR}/hardware"
             [ -f "scripts/hardware/sp970-setup.sh" ] && cp scripts/hardware/sp970-setup.sh "${BUNDLE_DIR}/hardware/"
             [ -f "scripts/hardware/fix-cpu-loop.sh" ] && cp scripts/hardware/fix-cpu-loop.sh "${BUNDLE_DIR}/hardware/"
-            tar -czvf "out/vohive_sp970_arm64_bundle.tar.gz" "${BUNDLE_DIR}"
+
+            # 打包带版本哈希与标准命名的 bundle
+            tar -czvf "out/vohive_sp970_arm64_bundle_${SHORT_SHA}.tar.gz" "${BUNDLE_DIR}"
+            sha256sum "out/vohive_sp970_arm64_bundle_${SHORT_SHA}.tar.gz" > "out/vohive_sp970_arm64_bundle_${SHORT_SHA}.tar.gz.sha256"
+            cp "out/vohive_sp970_arm64_bundle_${SHORT_SHA}.tar.gz" "out/vohive_sp970_arm64_bundle.tar.gz"
             sha256sum "out/vohive_sp970_arm64_bundle.tar.gz" > "out/vohive_sp970_arm64_bundle.tar.gz.sha256"
           fi
 
@@ -185,7 +206,7 @@ jobs:
     name: Publish release assets
     runs-on: ubuntu-latest
     needs: build
-    if: (github.event_name == 'workflow_dispatch' && inputs.publish_release) || startsWith(github.ref, 'refs/tags/v')
+    if: (github.event_name == 'workflow_dispatch' && inputs.publish_release) || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'push'
     steps:
       - name: Prepare release vars
         id: release_vars
@@ -193,10 +214,16 @@ jobs:
         run: |
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             RELEASE_VERSION="${GITHUB_REF_NAME}"
-          else
+            IS_PRERELEASE="false"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             RELEASE_VERSION="${{ github.event.inputs.version || 'dev' }}"
+            IS_PRERELEASE="false"
+          else
+            RELEASE_VERSION="dev"
+            IS_PRERELEASE="true"
           fi
           echo "release_version=${RELEASE_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "is_prerelease=${IS_PRERELEASE}" >> "${GITHUB_OUTPUT}"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -212,3 +239,4 @@ jobs:
           files: dist/*
           fail_on_unmatched_files: true
           overwrite_files: true
+          prerelease: ${{ steps.release_vars.outputs.is_prerelease == 'true' }}

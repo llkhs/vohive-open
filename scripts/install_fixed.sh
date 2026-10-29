@@ -48,21 +48,21 @@ echo "[*] 系统架构：$RAW_ARCH (适配类别: $ARCH)"
 
 # ── 3. 寻找并准备安装资产 ─────────────────────────────────────
 SRC_BIN=""
-CANDIDATE_BINS=(
-  "$SCRIPT_DIR/vohive"
-  "$SCRIPT_DIR/vohive_linux_${ARCH}"
-  "$SCRIPT_DIR/vohive_dev_linux_${ARCH}"
-  "$SCRIPT_DIR/../../dist/vo-hive"
-  "$PWD/vohive"
-  "$PWD/vohive_dev_linux_${ARCH}"
-  "/root/vohive_dev_linux_${ARCH}"
-)
-
-for b in "${CANDIDATE_BINS[@]}"; do
-  if [ -f "$b" ] && [ -s "$b" ]; then
-    SRC_BIN="$b"
-    break
-  fi
+# 智能搜索：优先匹配同目录、当前目录或 /root 下带版本哈希或标准命名的二进制产物
+for dir in "$SCRIPT_DIR" "$PWD" "/root" "$SCRIPT_DIR/../../dist"; do
+  [ ! -d "$dir" ] && continue
+  for b in $(ls "$dir"/vohive*linux*${ARCH}* 2>/dev/null | sort -V -r); do
+    if [ -f "$b" ] && [ -s "$b" ] && [[ ! "$b" =~ \.(sha256|tar|gz|zip|txt)$ ]]; then
+      SRC_BIN="$b"
+      break 2
+    fi
+  done
+  for b in "$dir/vohive" "$dir/vo-hive"; do
+    if [ -f "$b" ] && [ -s "$b" ]; then
+      SRC_BIN="$b"
+      break 2
+    fi
+  done
 done
 
 if [ -z "$SRC_BIN" ]; then
