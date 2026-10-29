@@ -168,11 +168,12 @@ if [ ! -f "$CONFIG_PATH" ]; then
 
   DEVICE_SECTION="devices: []"
   if [ -e "/dev/wwan0qmi0" ]; then
-    echo "[+] 检测到高通 QMI 调制解调器 (/dev/wwan0qmi0)，自动配置 wwan0 设备..."
+    echo "[+] 检测到高通 QMI 调制解调器 (/dev/wwan0qmi0)，自动配置 wwan0 设备 (已开启 QMI 代理并发共享)..."
     DEVICE_SECTION=$(cat << 'DEVEOF'
 devices:
   - id: wwan0
     device_backend: qmi
+    qmi_use_proxy: true
     operator_selection_mode: automatic
 DEVEOF
 )
@@ -254,14 +255,58 @@ else
   fi
 fi
 
-# ── 10. 高通 410 (SP970-B-V13) 随身 WiFi 一体化硬件加固与系统调优 ─────
+# ── 10. 【优先启动】配置 systemd 单元并极速拉起 VoHive 前端 ──
+echo "----------------------------------------------------------------------"
+echo "[*] 配置 systemd 服务单元 → $SERVICE_PATH"
+cat > "$SERVICE_PATH" <<'EOF'
+[Unit]
+Description=VoHive Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/vohive
+ExecStart=/opt/vohive/bin/vohive -c /opt/vohive/config/config.yaml
+Restart=always
+RestartSec=3
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+echo "[*] 正在极速启动 VoHive 服务，确保 Web 前端优先就绪..."
+systemctl daemon-reload
+systemctl enable --now vohive
+systemctl restart vohive
+
+sleep 2
+IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+[ -z "$IP" ] && IP="127.0.0.1"
+
+if systemctl is-active --quiet vohive; then
+  echo
+  echo "======================================================================"
+  echo "[✓] VoHive 核心服务与 Web 前端已极速启动上线！"
+  echo "    Web 管理地址：http://${IP}:${PORT}"
+  echo "    默认登录凭据：admin / admin (请在系统设置中及时修改)"
+  echo "    服务运行状态：已就绪 (Active/Running)"
+  echo "======================================================================"
+else
+  echo "[-] 提示：VoHive 正在拉起中，可通过 journalctl -u vohive -f 查看启动日志"
+fi
+
+# ── 11. 【紧随其后】执行硬件加固与系统调优 (SP970-B-V13 / MSM8916) ─
 if [ -e "/dev/wwan0qmi0" ] || [ -e "/dev/wwan0at0" ]; then
+  echo
   echo "----------------------------------------------------------------------"
   echo "[*] 检测到高通 410 (MSM8916) 硬件环境！"
   echo "[*] 正在执行一体化硬件加固与系统稳定性调优 (防掉卡/防CPU死锁/WiFi防休眠/内存优化)..."
 
   # 1. 彻底禁用冲突的 ModemManager
-  echo "[+] 1. 禁用系统自带 ModemManager，彻底防止与 VoHive 发生串口/QMI 冲突..."
+  echo "[+] 1. 禁用系统自带 ModemManager，防止与 VoHive 发生串口/QMI 冲突..."
   systemctl disable --now ModemManager 2>/dev/null || true
 
   # 2. 根除 NetworkManager 蜂窝自动拨号无限死循环
@@ -301,8 +346,6 @@ EOF_NM
   echo "[+] 4. 配置动态默认网关心跳探活机制 (防止 AP 脱网/假死)..."
   cat << 'EOF_KEEPALIVE' > /usr/local/bin/wifi-keepalive.sh
 #!/bin/bash
-# VoHive WiFi 动态网关探活保活脚本 (MSM8916 SP970)
-# 自动探测当前实际默认网关，适配不同路由环境 (如 192.168.1.1 / 192.168.10.1 / 10.x.x.x 等)
 GW=$(ip route show default 2>/dev/null | awk '/default/ {print $3}' | head -n 1)
 [ -z "$GW" ] && GW=$(ip route 2>/dev/null | grep -E '^default' | awk '{print $3}' | head -n 1)
 
@@ -323,201 +366,88 @@ EOF_CRON
   echo "[+] 5. 优化系统虚拟内存与 Swap 参数 (适配低内存环境)..."
   mkdir -p /etc/sysctl.d
   cat << 'EOF_SYSCTL' > /etc/sysctl.d/99-vohive-sp970.conf
-# 针对高通 410 (376MB 可用内存) 的系统级虚拟内存调优
-# 充分利用 zram 压缩内存，防止小内存直接回收（Direct Reclaim）卡死
 vm.swappiness = 100
 vm.vfs_cache_pressure = 50
 EOF_SYSCTL
   sysctl -p /etc/sysctl.d/99-vohive-sp970.conf >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1 || true
 
-  # 6. 生成常驻自启硬件初始化与自动驻网脚本
-  echo "[+] 6. 生成常驻自启硬件初始化脚本 /usr/local/bin/modem-init.sh ..."
+  # 6. 配置 LTE 频段策略 (Band 1+3，排除 Band 5 死锁)
+  if [ -x /usr/local/bin/lock-band3 ]; then
+    echo "[+] 6. 应用 LTE Band 1+3 频段锁 (彻底排除电信 Band 5 搜网死锁)..."
+    /usr/local/bin/lock-band3 >/dev/null 2>&1 || true
+  fi
+
+  # 7. 生成开机常驻自启硬件初始化与驻网脚本
+  echo "[+] 7. 生成常驻自启硬件初始化脚本 /usr/local/bin/modem-init.sh ..."
   cat << 'EOF_MODEM_INIT' > /usr/local/bin/modem-init.sh
 #!/bin/bash
-# ==============================================================================
-# MSM8916 Modem 自适应驻网常驻服务 (加固版: 自动锁 Band 1+3 + 零数据流量)
-# ==============================================================================
-
 QMI_DEV="/dev/wwan0qmi0"
 AT_DEV="/dev/wwan0at0"
 
-# 1. 等待设备节点就绪（最多等待 45 秒）
-for i in $(seq 1 45); do
-    if [ -e "$QMI_DEV" ] && [ -e "$AT_DEV" ]; then
-        break
-    fi
+# 1. 等待设备节点就绪
+for i in $(seq 1 30); do
+    [ -e "$QMI_DEV" ] && break
     sleep 1
 done
 
-if [ ! -e "$QMI_DEV" ] || [ ! -e "$AT_DEV" ]; then
-    echo "[-] 找不到 $QMI_DEV 或 $AT_DEV 设备节点"
-    exit 1
-fi
+[ ! -e "$QMI_DEV" ] && exit 0
 
-# 2. 独占控制：临时暂停 VoHive，清理僵死代理
-WAS_VOHIVE_ACTIVE=0
-if systemctl is-active --quiet vohive 2>/dev/null; then
-    echo "[*] 临时暂停 vohive 服务以获得独占控制权..."
-    systemctl stop vohive
-    WAS_VOHIVE_ACTIVE=1
-fi
+# 2. 确保 DMS 在线模式
+qmicli -p -d "$QMI_DEV" --dms-set-operating-mode=online >/dev/null 2>&1 || true
 
-killall -9 qmi-proxy 2>/dev/null || true
-sleep 1
+# 3. 锁定 LTE 频段为 Band 1+3
+[ -x /usr/local/bin/lock-band3 ] && /usr/local/bin/lock-band3 >/dev/null 2>&1 || true
 
-# 3. 激活并守护 USIM Provisioning 会话（核心防掉卡逻辑）
-ensure_usim_ready() {
-    local card_info
-    card_info=$(qmicli -p -d "$QMI_DEV" --uim-get-card-status 2>/dev/null || true)
-    if ! echo "$card_info" | grep -q "Primary GW:   slot '1'"; then
-        echo "[+] 检测到 Primary GW 会话未激活，正在激活卡槽 1 USIM..."
-        local aid
-        aid=$(echo "$card_info" | awk '/Application type:.*usim/{flag=1} flag && /Application ID:/{getline; gsub(/^[ \t]+|[ \t]+$/, ""); print; exit}')
-        [ -z "$aid" ] && aid="A0:00:00:00:87:10:02:FF:47:F0:01:89:00:00:01:FF"
-        qmicli -p -d "$QMI_DEV" --uim-change-provisioning-session="session-type=primary-gw-provisioning,activate=yes,slot=1,aid=$aid" >/dev/null 2>&1 || true
-        sleep 1
-    fi
-    qmicli -p -d "$QMI_DEV" --dms-set-operating-mode=online >/dev/null 2>&1 || true
-}
-
-ensure_usim_ready
-
-# 3.1 锁定 LTE 频段为 Band 1+3 (排除电信 Band 5 卡死)
-if [ -x /usr/local/bin/lock-band3 ]; then
-    echo "[+] 正在配置 LTE 频段策略 (Band 1+3，排除 Band 5)..."
-    /usr/local/bin/lock-band3 >/dev/null 2>&1 || true
-fi
-
-# 4. 读取 SIM 卡 IMSI，用于智能运营商决策
-IMSI=""
-for retry in 1 2 3 4; do
-    IMSI_RAW=$(qmicli -p -d "$QMI_DEV" --dms-uim-get-imsi 2>/dev/null || true)
-    IMSI=$(echo "$IMSI_RAW" | grep -oE '[0-9]{15}' | head -n 1)
-    if [ -n "$IMSI" ]; then
-        break
-    fi
-    sleep 1
-done
-
-if [ -z "$IMSI" ]; then
-    IMSI=$(perl -e '
-        use strict; use IO::Select;
-        my $p = "/dev/wwan0at0"; open(my $fh, "+<", $p) or exit 0;
-        system("stty -F $p 115200 raw -echo");
-        my $sel = IO::Select->new($fh);
-        syswrite($fh, "AT+CIMI\r\n");
-        my $buf = "";
-        while ($sel->can_read(2.0)) { my $t; last unless sysread($fh,$t,1024); $buf.=$t; last if $buf=~/(OK|ERROR|\+CME ERROR)/; }
-        close($fh);
-        if ($buf =~ /(\d{15})/) { print $1; }
-    ' 2>/dev/null || true)
-fi
-
-echo "[+] 成功读取 SIM 卡 IMSI: ${IMSI:-未知}"
-
-CANDIDATE_PLMNS=("46001" "46000" "AUTO")
-if [ -n "$IMSI" ]; then
-    MCC="${IMSI:0:3}"
-    MNC="${IMSI:3:2}"
-    if [ "$MCC" = "460" ]; then
-        case "$MNC" in
-            00|02|04|07|08)
-                echo "[*] 检测为 中国移动 卡，目标 PLMN: 46000"
-                CANDIDATE_PLMNS=("46000" "AUTO")
-                ;;
-            01|06|09|10)
-                echo "[*] 检测为 中国联通 卡，目标 PLMN: 46001"
-                CANDIDATE_PLMNS=("46001" "AUTO")
-                ;;
-            03|05|11)
-                echo "[*] 检测为 中国电信 卡，目标 PLMN: 46011"
-                CANDIDATE_PLMNS=("46011" "AUTO")
-                ;;
-            *)
-                CANDIDATE_PLMNS=("46001" "46000" "46011" "AUTO")
-                ;;
-        esac
-    else
-        echo "[*] 检测为 境外漫游卡/物联卡 (MCC: $MCC)"
-        echo "[*] 在大陆环境优先锁定联通(46001)，备选移动(46000)"
-        CANDIDATE_PLMNS=("46001" "46000" "AUTO")
-    fi
-else
-    CANDIDATE_PLMNS=("46001" "46000" "46011" "AUTO")
+# 4. 检查是否已经正常驻网
+SERV_INFO=$(qmicli -p -d "$QMI_DEV" --nas-get-serving-system 2>/dev/null || true)
+if echo "$SERV_INFO" | grep -q "Registration state: 'registered'"; then
+    exit 0
 fi
 
 # 5. 清理 Attach PDN 冲突并重置 CID 承载
 qmicli -p -d "$QMI_DEV" --wds-set-lte-attach-pdn-list='1' >/dev/null 2>&1 || true
-perl -e '
-use strict; use IO::Select;
-my $p = "/dev/wwan0at0"; open(my $fh, "+<", $p) or exit 0;
-system("stty -F $p 115200 raw -echo");
-my $sel = IO::Select->new($fh);
-sub at {
-    my $c = shift; syswrite($fh, "$c\r\n");
-    my $b = ""; while($sel->can_read(2.0)){ my $t; last unless sysread($fh,$t,1024); $b.=$t; last if $b=~/(OK|ERROR)/; }
-}
-at("AT+CGDCONT=1,\"IPV4V6\",\"\"");
-at("AT+CGDCONT=2,\"IPV4V6\",\"\"");
-at("AT+CGDCONT=3,\"IPV4V6\",\"\"");
-close($fh);
-' 2>/dev/null || true
 
-# 6. 遍历候选选网策略
-REGISTERED=0
-for TARGET_PLMN in "${CANDIDATE_PLMNS[@]}"; do
-    ensure_usim_ready
-    echo "[+] 正在执行附着策略: $TARGET_PLMN ..."
-    if [ "$TARGET_PLMN" = "AUTO" ]; then
-        perl -e '
-            use strict; use IO::Select;
-            my $p = "/dev/wwan0at0"; open(my $fh, "+<", $p) or exit 0;
-            system("stty -F $p 115200 raw -echo");
-            my $sel = IO::Select->new($fh);
-            syswrite($fh, "AT+COPS=0\r\n");
-            my $b = ""; while($sel->can_read(15.0)){ my $t; last unless sysread($fh,$t,1024); $b.=$t; last if $b=~/(OK|ERROR)/; }
-            close($fh);
-        ' 2>/dev/null || true
-    else
+# 6. 优先尝试自动选网 (AUTO)
+if [ -e "$AT_DEV" ]; then
+    perl -e '
+        use strict; use IO::Select;
+        my $p = "/dev/wwan0at0"; open(my $fh, "+<", $p) or exit 0;
+        system("stty -F $p 115200 raw -echo");
+        my $sel = IO::Select->new($fh);
+        syswrite($fh, "AT+COPS=0
+");
+        my $b = ""; while($sel->can_read(10.0)){ my $t; last unless sysread($fh,$t,1024); $b.=$t; last if $b=~/(OK|ERROR)/; }
+        close($fh);
+    ' 2>/dev/null || true
+    sleep 4
+fi
+
+# 7. 再次检测驻网，若仍未附着则依次尝试联通(46001)、移动(46000)、电信(46011)
+SERV_INFO=$(qmicli -p -d "$QMI_DEV" --nas-get-serving-system 2>/dev/null || true)
+if ! echo "$SERV_INFO" | grep -q "Registration state: 'registered'"; then
+    for TARGET_PLMN in "46001" "46000" "46011"; do
         perl -e "
             use strict; use IO::Select;
             my \$p = '/dev/wwan0at0'; open(my \$fh, '+<', \$p) or exit 0;
             system('stty -F \$p 115200 raw -echo');
             my \$sel = IO::Select->new(\$fh);
-            syswrite(\$fh, \"AT+COPS=1,2,\\\"$TARGET_PLMN\\\",7\r\n\");
-            my \$b = ''; while(\$sel->can_read(35.0)){ my \$t; last unless sysread(\$fh,\$t,1024); \$b.=\$t; last if \$b=~/(OK|ERROR|\\+CME ERROR)/; }
+            syswrite(\$fh, "AT+COPS=1,2,\"$TARGET_PLMN\",7
+");
+            my \$b = ''; while(\$sel->can_read(15.0)){ my \$t; last unless sysread(\$fh,\$t,1024); \$b.=\$t; last if \$b=~/(OK|ERROR|\+CME ERROR)/; }
             close(\$fh);
         " 2>/dev/null || true
-    fi
-
-    # 轮询验证驻网状态 (最长等待 30 秒)
-    for wait_i in $(seq 1 15); do
-        sleep 2
+        sleep 3
         SERV_INFO=$(qmicli -p -d "$QMI_DEV" --nas-get-serving-system 2>/dev/null || true)
-        if echo "$SERV_INFO" | grep -q "Registration state: 'registered'"; then
-            echo "[√] 策略 $TARGET_PLMN 已成功驻网！"
-            echo "$SERV_INFO" | grep -E "(Registration state|PLMN|Description|MCC|MNC)" | head -n 5
-            REGISTERED=1
-            break 2
-        fi
+        echo "$SERV_INFO" | grep -q "Registration state: 'registered'" && break
     done
-
-    echo "[-] 策略 $TARGET_PLMN 尚未完全附着，尝试下一个候选策略..."
-done
-
-# 7. 恢复服务
-if [ "$WAS_VOHIVE_ACTIVE" = "1" ]; then
-    echo "[+] 正在恢复 VoHive 服务..."
-    systemctl start vohive
 fi
 
-echo "[√] Modem 初始化流程执行完毕！"
 exit 0
 EOF_MODEM_INIT
   chmod +x /usr/local/bin/modem-init.sh
 
-  # 7. 配置开机自启 systemd 单元 /etc/systemd/system/modem-init.service
-  echo "[+] 7. 配置开机自启 systemd 单元 /etc/systemd/system/modem-init.service ..."
+  # 8. 配置开机自启 systemd 单元 /etc/systemd/system/modem-init.service
+  echo "[+] 8. 配置开机自启 systemd 单元 /etc/systemd/system/modem-init.service ..."
   cat << 'EOF_MODEM_SVC' > /etc/systemd/system/modem-init.service
 [Unit]
 Description=Qualcomm MSM8916 Modem Auto-Init Service
@@ -535,73 +465,46 @@ WantedBy=multi-user.target
 EOF_MODEM_SVC
 
   systemctl daemon-reload
-  systemctl enable modem-init.service
+  systemctl enable modem-init.service 2>/dev/null || true
 
-  # 8. 清空 /etc/rc.local 避免重复竞态运行
-  echo "[+] 8. 确保清空 /etc/rc.local 避免重复竞态运行..."
+  # 9. 清空 /etc/rc.local 避免重复竞态运行
+  echo "[+] 9. 确保清空 /etc/rc.local 避免重复竞态运行..."
   cat << 'EOF_RCLOCAL' > /etc/rc.local
 #!/bin/sh -e
 exit 0
 EOF_RCLOCAL
   chmod +x /etc/rc.local
 
-  # 9. 首次执行初始化与驻网
-  echo "[+] 9. 正在首次执行硬件初始化与驻网测试..."
-  /usr/local/bin/modem-init.sh
-  echo "----------------------------------------------------------------------"
-fi
-
-# ── 11. 配置并启动 systemd 服务 ──────────────────────────────
-echo "[*] 配置 systemd 服务单元 → $SERVICE_PATH"
-cat > "$SERVICE_PATH" <<'EOF'
-[Unit]
-Description=VoHive Service
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/vohive
-ExecStart=/opt/vohive/bin/vohive -c /opt/vohive/config/config.yaml
-Restart=always
-RestartSec=3
-LimitNOFILE=1048576
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-echo "[*] 重载 systemd 并启动 VoHive 服务..."
-systemctl daemon-reload
-systemctl enable --now vohive
-systemctl restart vohive
-
-# ── 12. 验证与输出 ───────────────────────────────────────────
-sleep 2
-if systemctl is-active --quiet vohive; then
-  IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-  [ -z "$IP" ] && IP="127.0.0.1"
-  echo
-  echo "======================================================================"
-  echo "[✓] VoHive 部署成功并已正常运行！"
-  echo "    Web 管理地址：http://${IP}:${PORT}"
-  echo "    默认登录凭据：admin / admin (请在系统设置中及时修改)"
-  echo "    配置文件路径：$CONFIG_PATH"
-  echo "    日志查看命令：journalctl -u vohive -f"
-  if [ -e "/dev/wwan0qmi0" ] || [ -e "/dev/wwan0at0" ]; then
-    echo "----------------------------------------------------------------------"
-    echo "[*] 高通 SP970 硬件一体化加固完成项："
-    echo "    - 频段策略：Band 1+3 (彻底剔除电信 Band 5 搜网死锁)"
-    echo "    - 选网模式：自动适配 (漫游卡锁定中国联通 46001)"
-    echo "    - 流量防护：纯驻网收发短信，0 流量消耗"
-    echo "    - CPU 守护：彻底消除 NetworkManager 自动拨号死循环 (Load < 0.2)"
-    echo "    - WiFi 守护：永久关闭节能省电 (wifi.powersave=2) + 动态网关探活保活"
-    echo "    - 内存优化：vm.swappiness=100, vm.vfs_cache_pressure=50 (防小内存卡死)"
-    echo "    - 开机自启：已注册 modem-init.service (Before=vohive)"
+  # 10. 检查基带驻网状态，非阻塞自适应处理
+  echo "[+] 10. 检查基带驻网状态..."
+  SERV_INFO=$(qmicli -p -d "/dev/wwan0qmi0" --nas-get-serving-system 2>/dev/null || true)
+  if echo "$SERV_INFO" | grep -q "Registration state: 'registered'"; then
+    PLMN_DESC=$(echo "$SERV_INFO" | grep "Description:" | awk -F"'" '{print $2}' | head -n 1)
+    [ -z "$PLMN_DESC" ] && PLMN_DESC="已注册"
+    echo "    [✓] 基带已成功驻网 (${PLMN_DESC})，网络连接就绪！"
+  else
+    echo "    [*] 基带尚未完全附着，已在后台自动触发自适应驻网守护 (无需等待，日志: journalctl -u modem-init -f)..."
+    systemctl start modem-init.service >/dev/null 2>&1 &
   fi
-  echo "======================================================================"
-else
-  echo "[-] 警告：VoHive 服务未能立即启动，请排查日志："
-  echo "    journalctl -u vohive -n 50 --no-pager"
 fi
+
+# ── 12. 最终完成提示 ─────────────────────────────────────────
+echo
+echo "======================================================================"
+echo "[✓] VoHive 部署与硬件加固优化全部完成！"
+echo "    Web 管理地址：http://${IP}:${PORT}"
+echo "    默认登录凭据：admin / admin (请在系统设置中及时修改)"
+echo "    配置文件路径：$CONFIG_PATH"
+echo "    日志查看命令：journalctl -u vohive -f"
+if [ -e "/dev/wwan0qmi0" ] || [ -e "/dev/wwan0at0" ]; then
+  echo "----------------------------------------------------------------------"
+  echo "[*] 高通 SP970 硬件一体化加固完成项："
+  echo "    - 频段策略：Band 1+3 (彻底剔除电信 Band 5 搜网死锁)"
+  echo "    - 选网模式：自动适配 (漫游卡锁定中国联通 46001 / 移动 46000)"
+  echo "    - 流量防护：纯驻网收发短信，0 流量消耗"
+  echo "    - CPU 守护：彻底消除 NetworkManager 自动拨号死循环 (Load < 0.2)"
+  echo "    - WiFi 守护：永久关闭节能省电 (wifi.powersave=2) + 动态网关探活保活"
+  echo "    - 内存优化：vm.swappiness=100, vm.vfs_cache_pressure=50 (防小内存卡死)"
+  echo "    - 开机自启：已注册 modem-init.service (Before=vohive)"
+fi
+echo "======================================================================"

@@ -11,7 +11,10 @@ import (
 
 func main() {
 	devicePath := "/dev/wwan0qmi0"
-	client, err := qmi.NewClientWithOptions(context.Background(), devicePath, qmi.ClientOptions{})
+	client, err := qmi.NewClientWithOptions(context.Background(), devicePath, qmi.ClientOptions{
+		UseProxy:           true,
+		ProxyFallbackToRaw: true,
+	})
 	if err != nil {
 		log.Fatalf("Failed to create QMI client: %v", err)
 	}
