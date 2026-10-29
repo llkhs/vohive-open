@@ -22,6 +22,9 @@
 | :--- | :--- |
 | [`scripts/install.sh`](file:///D:/OT/vohive-open/scripts/install.sh) | **VoHive 一键全自动部署脚本**。自动识别架构、下载/部署二进制、配置默认端口 **7676**，若检测到高通棒子自动执行硬件加固。 |
 | [`scripts/hardware/sp970-setup.sh`](file:///D:/OT/vohive-open/scripts/hardware/sp970-setup.sh) | **SP970 专用硬件全自动初始化与加固脚本**。实现频段锁 Band 1+3 (剔除电信 Band 5)、自动选网、清除 CTNET 承载冲突、注册 `modem-init.service` 开机常驻自启。 |
+     - 永久关闭 WiFi 节能省电 (wifi.powersave=2)，根除空闲休眠失联假死；
+     - 部署动态默认网关心跳探活 (自动适配各种路由器网段)，杜绝 AP 脱网；
+     - 调优内核虚拟内存 (vm.swappiness=100)，充分利用 zram 防止 376MB 小内存缺页卡死；
 | [`scripts/hardware/fix-cpu-loop.sh`](file:///D:/OT/vohive-open/scripts/hardware/fix-cpu-loop.sh) | **CPU 100% 狂转高负载急救脚本**。瞬间解除 NetworkManager 对 modem 蜂窝接口的无限自动拨号死循环，清理僵死进程，使设备恢复常温（Load < 0.2）。 |
 | [`cmd/lock-band3/main.go`](file:///D:/OT/vohive-open/cmd/lock-band3/main.go) | **LTE 频段锁定工具源码**。使用 QMI NAS 协议将 `LTEBandPreference` 永久固化为 `0x05`（Band 1 + Band 3），GitHub Actions 编译产物中直接提供 `lock-band3_arm64`。 |
 
@@ -56,6 +59,9 @@
 - **修复**:
   - VoHive 内部已支持将 `operator_selection_mode: manual` 与 `operator_selection_plmn: "46001"` 持久化写入 `config.yaml`，重启不丢失选网。
   - 配置 `modem-init.service` (`Before=vohive.service`)，在开机阶段首先完成卡槽激活、锁频与选网，VoHive 启动后直接进入正常服务状态。
+     - 永久关闭 WiFi 节能省电 (wifi.powersave=2)，根除空闲休眠失联假死；
+     - 部署动态默认网关心跳探活 (自动适配各种路由器网段)，杜绝 AP 脱网；
+     - 调优内核虚拟内存 (vm.swappiness=100)，充分利用 zram 防止 376MB 小内存缺页卡死；
 
 ---
 
@@ -99,6 +105,9 @@ bash install.sh
      - 根除 `NetworkManager` 自动拨号死循环，解除 CPU 100% 负载发热；
      - 设置 Band 1+3 频段锁，剔除电信 Band 5 搜网死锁；
      - 注册 `modem-init.service` 开机常驻自启服务；
+     - 永久关闭 WiFi 节能省电 (wifi.powersave=2)，根除空闲休眠失联假死；
+     - 部署动态默认网关心跳探活 (自动适配各种路由器网段)，杜绝 AP 脱网；
+     - 调优内核虚拟内存 (vm.swappiness=100)，充分利用 zram 防止 376MB 小内存缺页卡死；
      - 保持蜂窝数据网络关闭，杜绝高额漫游资费。
    - 启动并启用 `vohive.service`。
 
