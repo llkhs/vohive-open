@@ -5,7 +5,6 @@ on:
     tags:
       - 'v*'
     branches:
-      - 'debug/**'
       - 'main'
   workflow_dispatch:
     inputs:
@@ -131,7 +130,8 @@ jobs:
             go build -trimpath -buildvcs=false -tags "with_utls nomsgpack" \
             -ldflags "-s -w -X 'github.com/iniwex5/vohive/internal/global.Version=${{ steps.vars.outputs.version }}' -X 'github.com/iniwex5/vohive/internal/global.GitCommit=${{ steps.vars.outputs.commit }}' -X 'github.com/iniwex5/vohive/internal/global.BuildTime=${{ steps.vars.outputs.buildtime }}'" \
             -o dist/vo-hive ./cmd/vohive
-          if [ -d "./cmd/lock-band3" ]; then
+          # lock-band3 仅为高通 MSM8916 (arm64) 随身 WiFi 工具，仅构建 arm64 架构
+          if [ "${{ matrix.artifact_arch }}" == "arm64" ] && [ -d "./cmd/lock-band3" ]; then
             GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} GOARM=${{ matrix.goarm }} \
               go build -trimpath -buildvcs=false \
               -ldflags "-s -w" \
@@ -154,27 +154,21 @@ jobs:
       - name: Package artifact
         shell: bash
         run: |
-          SHORT_SHA="${{ steps.vars.outputs.short_commit }}"
-          OUT_HASH="vohive_${{ steps.vars.outputs.version }}_linux_${{ matrix.artifact_arch }}_${SHORT_SHA}"
-          OUT_STD="vohive_${{ steps.vars.outputs.version }}_linux_${{ matrix.artifact_arch }}"
           mkdir -p out
+          OUT="vohive_${{ steps.vars.outputs.version }}_linux_${{ matrix.artifact_arch }}"
 
-          # 产物带上版本短哈希
-          cp dist/vo-hive "out/${OUT_HASH}"
-          sha256sum "out/${OUT_HASH}" > "out/${OUT_HASH}.sha256"
-          # 同步保留标准名称文件副本，方便固定脚本通用下载
-          cp dist/vo-hive "out/${OUT_STD}"
-          sha256sum "out/${OUT_STD}" > "out/${OUT_STD}.sha256"
+          # 统一标准文件命名（无重复冗余）
+          cp dist/vo-hive "out/${OUT}"
+          sha256sum "out/${OUT}" > "out/${OUT}.sha256"
 
-          if [ -f "dist/lock-band3" ]; then
-            LOCK_OUT="lock-band3_${{ matrix.artifact_arch }}"
-            LOCK_OUT_HASH="lock-band3_${{ matrix.artifact_arch }}_${SHORT_SHA}"
-            cp dist/lock-band3 "out/${LOCK_OUT_HASH}"
-            sha256sum "out/${LOCK_OUT_HASH}" > "out/${LOCK_OUT_HASH}.sha256"
+          # lock-band3 仅随 arm64 提供独立产物
+          if [ "${{ matrix.artifact_arch }}" == "arm64" ] && [ -f "dist/lock-band3" ]; then
+            LOCK_OUT="lock-band3_arm64"
             cp dist/lock-band3 "out/${LOCK_OUT}"
             sha256sum "out/${LOCK_OUT}" > "out/${LOCK_OUT}.sha256"
           fi
 
+          # 为高通 410 (SP970-B-V13) 提供一站式全量解压即用包
           if [ "${{ matrix.artifact_arch }}" == "arm64" ]; then
             BUNDLE_DIR="vohive_sp970_arm64"
             mkdir -p "${BUNDLE_DIR}"
@@ -188,10 +182,7 @@ jobs:
             [ -f "scripts/hardware/sp970-setup.sh" ] && cp scripts/hardware/sp970-setup.sh "${BUNDLE_DIR}/hardware/"
             [ -f "scripts/hardware/fix-cpu-loop.sh" ] && cp scripts/hardware/fix-cpu-loop.sh "${BUNDLE_DIR}/hardware/"
 
-            # 打包带版本哈希与标准命名的 bundle
-            tar -czvf "out/vohive_sp970_arm64_bundle_${SHORT_SHA}.tar.gz" "${BUNDLE_DIR}"
-            sha256sum "out/vohive_sp970_arm64_bundle_${SHORT_SHA}.tar.gz" > "out/vohive_sp970_arm64_bundle_${SHORT_SHA}.tar.gz.sha256"
-            cp "out/vohive_sp970_arm64_bundle_${SHORT_SHA}.tar.gz" "out/vohive_sp970_arm64_bundle.tar.gz"
+            tar -czvf "out/vohive_sp970_arm64_bundle.tar.gz" "${BUNDLE_DIR}"
             sha256sum "out/vohive_sp970_arm64_bundle.tar.gz" > "out/vohive_sp970_arm64_bundle.tar.gz.sha256"
           fi
 
@@ -208,22 +199,56 @@ jobs:
     needs: build
     if: (github.event_name == 'workflow_dispatch' && inputs.publish_release) || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'push'
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Prepare release vars
         id: release_vars
         shell: bash
         run: |
+          COMMIT_HASH="$(git rev-parse HEAD 2>/dev/null || echo '${{ github.sha }}')"
+          SHORT_SHA="${COMMIT_HASH:0:7}"
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            RELEASE_VERSION="${GITHUB_REF_NAME}"
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+            RELEASE_NAME="${GITHUB_REF_NAME}"
             IS_PRERELEASE="false"
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            RELEASE_VERSION="${{ github.event.inputs.version || 'dev' }}"
-            IS_PRERELEASE="false"
+            RELEASE_TAG="${{ github.event.inputs.version || 'dev' }}"
+            RELEASE_NAME="Dev Build (${SHORT_SHA})"
+            IS_PRERELEASE="true"
           else
-            RELEASE_VERSION="dev"
+            RELEASE_TAG="dev"
+            RELEASE_NAME="Dev Build (${SHORT_SHA})"
             IS_PRERELEASE="true"
           fi
-          echo "release_version=${RELEASE_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "release_tag=${RELEASE_TAG}" >> "${GITHUB_OUTPUT}"
+          echo "release_name=${RELEASE_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "short_sha=${SHORT_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "commit_hash=${COMMIT_HASH}" >> "${GITHUB_OUTPUT}"
           echo "is_prerelease=${IS_PRERELEASE}" >> "${GITHUB_OUTPUT}"
+
+      - name: Generate release notes
+        shell: bash
+        run: |
+          BUILD_TIME="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          cat << EOF > release_body.md
+          ### VoHive 自动构建发布
+
+          - **版本状态**: \`${{ steps.release_vars.outputs.release_tag }}\`
+          - **提交哈希**: [${{ steps.release_vars.outputs.short_sha }}](https://github.com/${{ github.repository }}/commit/${{ steps.release_vars.outputs.commit_hash }})
+          - **构建时间**: \`${BUILD_TIME}\`
+
+          #### 资产下载指南
+          | 文件名称 | 说明 |
+          | :--- | :--- |
+          | **\`vohive_sp970_arm64_bundle.tar.gz\`** | **高通 410 (SP970-B-V13) 随身 WiFi 一站式全量包**（预装主程序、频段锁、离线字典及硬件加固脚本） |
+          | **\`vohive_${{ steps.release_vars.outputs.release_tag }}_linux_arm64\`** | Linux 64位 ARM (ARM64 / aarch64) 单可执行文件 |
+          | **\`vohive_${{ steps.release_vars.outputs.release_tag }}_linux_amd64\`** | Linux 64位 x86_64 (amd64) 单可执行文件 |
+          | **\`vohive_${{ steps.release_vars.outputs.release_tag }}_linux_armv7\`** | Linux 32位 ARM (armv7) 单可执行文件 |
+          | **\`lock-band3_arm64\`** | 高通 410 (MSM8916) 专用 LTE Band 1+3 频段锁独立工具 |
+
+          > 校验码可在对应的 \`.sha256\` 文件中查看验证。
+          EOF
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -235,7 +260,9 @@ jobs:
       - name: Publish to this GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.release_vars.outputs.release_version }}
+          tag_name: ${{ steps.release_vars.outputs.release_tag }}
+          name: ${{ steps.release_vars.outputs.release_name }}
+          body_path: release_body.md
           files: dist/*
           fail_on_unmatched_files: true
           overwrite_files: true
