@@ -168,8 +168,26 @@ if [ ! -f "$CONFIG_PATH" ]; then
 
   DEVICE_SECTION="devices: []"
   if [ -e "/dev/wwan0qmi0" ]; then
-    echo "[+] 检测到高通 QMI 调制解调器 (/dev/wwan0qmi0)，自动配置 wwan0 设备 (已开启 QMI 代理并发共享)..."
-    DEVICE_SECTION=$(cat << 'DEVEOF'
+    echo "[+] 检测到高通 QMI 调制解调器 (/dev/wwan0qmi0)，正在探测设备 IMEI 并自动配置 wwan0 设备..."
+    PROBED_IMEI=""
+    if command -v qmicli >/dev/null 2>&1; then
+      PROBED_IMEI=$(qmicli -p -d /dev/wwan0qmi0 --dms-get-ids 2>/dev/null | grep -i "IMEI:" | awk -F"'" '{print $2}' | tr -d ' \r\n' || true)
+      [ -z "$PROBED_IMEI" ] && PROBED_IMEI=$(qmicli -d /dev/wwan0qmi0 --dms-get-ids 2>/dev/null | grep -i "IMEI:" | awk -F"'" '{print $2}' | tr -d ' \r\n' || true)
+    fi
+
+    if [ -n "$PROBED_IMEI" ]; then
+      echo "    [✓] 成功探测到基带 IMEI: $PROBED_IMEI"
+      DEVICE_SECTION=$(cat << DEVEOF
+devices:
+  - id: wwan0
+    modem_imei: "$PROBED_IMEI"
+    device_backend: qmi
+    qmi_use_proxy: true
+    operator_selection_mode: automatic
+DEVEOF
+)
+    else
+      DEVICE_SECTION=$(cat << 'DEVEOF'
 devices:
   - id: wwan0
     device_backend: qmi
@@ -177,6 +195,7 @@ devices:
     operator_selection_mode: automatic
 DEVEOF
 )
+    fi
   fi
 
   cat > "$CONFIG_PATH" <<EOF
