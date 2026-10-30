@@ -186,9 +186,7 @@ jobs:
             tar -czvf "out/vohive_openstick_arm64_bundle.tar.gz" "${BUNDLE_DIR}"
             sha256sum "out/vohive_openstick_arm64_bundle.tar.gz" > "out/vohive_openstick_arm64_bundle.tar.gz.sha256"
 
-            # 保持对旧名称 vohive_sp970_arm64_bundle 的向后兼容发布
-            cp "out/vohive_openstick_arm64_bundle.tar.gz" "out/vohive_sp970_arm64_bundle.tar.gz"
-            cp "out/vohive_openstick_arm64_bundle.tar.gz.sha256" "out/vohive_sp970_arm64_bundle.tar.gz.sha256"
+
           fi
 
       - name: Upload artifact
@@ -246,7 +244,7 @@ jobs:
           #### 资产下载指南
           | 文件名称 | 说明 |
           | :--- | :--- |
-          | **\`vohive_sp970_arm64_bundle.tar.gz\`** | **高通 410 (SP970-B-V13) 随身 WiFi 一站式全量包**（预装主程序、频段锁、离线字典及硬件加固脚本） |
+          | **\`vohive_openstick_arm64_bundle.tar.gz\`** | **高通 410 (MSM8916 / OpenStick 全系: UFI001C, UFI003, SP970, UZ801 等) 随身 WiFi 一站式全量包**（预装主程序、频段锁、离线字典及硬件加固脚本） |
           | **\`vohive_${{ steps.release_vars.outputs.release_tag }}_linux_arm64\`** | Linux 64位 ARM (ARM64 / aarch64) 单可执行文件 |
           | **\`vohive_${{ steps.release_vars.outputs.release_tag }}_linux_amd64\`** | Linux 64位 x86_64 (amd64) 单可执行文件 |
           | **\`vohive_${{ steps.release_vars.outputs.release_tag }}_linux_armv7\`** | Linux 32位 ARM (armv7) 单可执行文件 |
