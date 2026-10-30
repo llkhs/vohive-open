@@ -135,7 +135,7 @@ export type DeviceConfigDTO = {
   usb_path?: string
   apn?: string
   ip_version?: 'v4' | 'v6' | 'v4v6'
-  esim_transport?: 'at' | 'qmi'
+  esim_transport?: 'at' | 'qmi' | 'mbim'
   network_enabled?: boolean
   at_port: string
   control_device: string
