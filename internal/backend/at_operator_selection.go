@@ -137,3 +137,7 @@ func ratToATAct(rat OperatorAccessTechnology) int {
 		return 0
 	}
 }
+
+func AtActToRAT(act int) OperatorAccessTechnology {
+	return atActToRAT(act)
+}

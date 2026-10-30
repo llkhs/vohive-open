@@ -54,3 +54,7 @@ func (m *Manager) SetOperatorManual(plmn string, act int, hasAct bool) error {
 	_, err := m.ExecuteAT(cmd, 60*time.Second)
 	return err
 }
+
+func ParseCOPSScan(resp string) []OperatorScanEntry {
+	return parseCOPSScan(resp)
+}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/iniwex5/quectel-qmi-go/pkg/qmi"
 	"github.com/iniwex5/vohive/internal/backend"
+	"github.com/iniwex5/vohive/internal/modem"
 	"github.com/iniwex5/vohive/pkg/logger"
 )
 
@@ -56,7 +57,19 @@ func (w *Worker) ScanOperators(ctx context.Context) ([]backend.OperatorCandidate
 		return nil, ErrOperatorSelectionNotSupported
 	}
 
-	return provider.ScanOperators(ctx)
+	candidates, err := provider.ScanOperators(ctx)
+	if err != nil {
+		atPort := w.ResolvedATPort()
+		if atPort != "" {
+			if atCandidates, atErr := tryScanOperatorsViaAT(atPort); atErr == nil && len(atCandidates) > 0 {
+				logger.Info("provider 搜网失败，已通过 AT 端口降级完成搜网", "device", w.ID, "at_port", atPort, "err", err, "count", len(atCandidates))
+				return atCandidates, nil
+			} else if atErr != nil {
+				logger.Warn("provider 搜网失败且 AT 降级也失败", "device", w.ID, "provider_err", err, "at_err", atErr)
+			}
+		}
+	}
+	return candidates, err
 }
 
 type incrementalOperatorScanProvider interface {
@@ -76,10 +89,12 @@ func isRetryableOperatorScanError(err error) bool {
 		return true
 	}
 	qe := qmi.GetQMIError(err)
-	return qe != nil &&
-		qe.Service == qmi.ServiceNAS &&
-		qe.MessageID == qmi.NASPerformNetworkScan &&
-		qe.ErrorCode == qmi.QMIErrInternal
+	if qe != nil && qe.Service == qmi.ServiceNAS && qe.MessageID == qmi.NASPerformNetworkScan {
+		if qe.ErrorCode == qmi.QMIErrInternal || qe.ErrorCode == 0x0046 || qe.ErrorCode == 0x0019 {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *Worker) IsOperatorScanActive() bool {
@@ -167,7 +182,12 @@ func (w *Worker) runOperatorScan(ctx context.Context, cancel context.CancelFunc,
 		result.Err = err.Error()
 		if isRetryableOperatorScanError(err) {
 			result.Retryable = true
-			result.Message = operatorScanRetryableMessage
+			qe := qmi.GetQMIError(err)
+			if qe != nil && qe.ErrorCode == 0x0046 {
+				result.Message = "模组当前正在进行后台搜网或注册，射频正忙，请稍后重试"
+			} else {
+				result.Message = operatorScanRetryableMessage
+			}
 		} else {
 			result.Message = err.Error()
 		}
@@ -323,4 +343,61 @@ func (w *Worker) SetOperatorSelection(ctx context.Context, req backend.SetOperat
 	}
 
 	return res, nil
+}
+
+func tryScanOperatorsViaAT(atPort string) ([]backend.OperatorCandidate, error) {
+	atPort = strings.TrimSpace(atPort)
+	if atPort == "" {
+		return nil, fmt.Errorf("empty at port")
+	}
+	session, err := modem.NewSerialAT(atPort, 115200, 8, 1, "N")
+	if err != nil {
+		return nil, fmt.Errorf("open at port %s failed: %w", atPort, err)
+	}
+	defer session.Close()
+
+	resp, err := session.Execute("AT+COPS=?", 90*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("execute AT+COPS=? failed: %w", err)
+	}
+
+	entries := modem.ParseCOPSScan(resp)
+	var candidates []backend.OperatorCandidate
+	for _, entry := range entries {
+		var status string
+		switch entry.Status {
+		case 1:
+			status = "available"
+		case 2:
+			status = "current"
+		case 3:
+			status = "forbidden"
+		default:
+			status = "unknown"
+		}
+
+		rat := backend.AtActToRAT(entry.Act)
+		var rats []backend.OperatorAccessTechnology
+		if rat != backend.OperatorRATUnknown {
+			rats = []backend.OperatorAccessTechnology{rat}
+		}
+
+		candidate := backend.OperatorCandidate{
+			PLMN:         entry.PLMN,
+			OperatorName: entry.LongName,
+			ShortName:    entry.ShortName,
+			Status:       status,
+			RATs:         rats,
+		}
+
+		if normalized, err := backend.NormalizePLMNSelection(entry.PLMN); err == nil {
+			candidate.MCC = normalized.MCC
+			candidate.MNC = normalized.MNC
+			candidate.MNCLength = normalized.MNCLength
+			candidate.IncludesPCSDigit = normalized.IncludesPCSDigit
+		}
+
+		candidates = append(candidates, candidate)
+	}
+	return candidates, nil
 }
