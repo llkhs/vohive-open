@@ -168,9 +168,9 @@ jobs:
             sha256sum "out/${LOCK_OUT}" > "out/${LOCK_OUT}.sha256"
           fi
 
-          # 为高通 410 (SP970-B-V13) 提供一站式全量解压即用包
+          # 为高通 410 (MSM8916 / OpenStick 全系: UFI001C, UFI003, SP970, UZ801 等) 提供一站式全量解压即用包
           if [ "${{ matrix.artifact_arch }}" == "arm64" ]; then
-            BUNDLE_DIR="vohive_sp970_arm64"
+            BUNDLE_DIR="vohive_openstick_arm64"
             mkdir -p "${BUNDLE_DIR}"
             cp dist/vo-hive "${BUNDLE_DIR}/vohive"
             [ -f "dist/lock-band3" ] && cp dist/lock-band3 "${BUNDLE_DIR}/lock-band3"
@@ -178,11 +178,17 @@ jobs:
             [ -f "scripts/install.sh" ] && cp scripts/install.sh "${BUNDLE_DIR}/"
             [ -f "scripts/fix-modem-allnet.sh" ] && cp scripts/fix-modem-allnet.sh "${BUNDLE_DIR}/"
             mkdir -p "${BUNDLE_DIR}/hardware"
+            [ -f "scripts/hardware/openstick-msm8916-setup.sh" ] && cp scripts/hardware/openstick-msm8916-setup.sh "${BUNDLE_DIR}/hardware/"
             [ -f "scripts/hardware/sp970-setup.sh" ] && cp scripts/hardware/sp970-setup.sh "${BUNDLE_DIR}/hardware/"
             [ -f "scripts/hardware/fix-cpu-loop.sh" ] && cp scripts/hardware/fix-cpu-loop.sh "${BUNDLE_DIR}/hardware/"
 
-            tar -czvf "out/vohive_sp970_arm64_bundle.tar.gz" "${BUNDLE_DIR}"
-            sha256sum "out/vohive_sp970_arm64_bundle.tar.gz" > "out/vohive_sp970_arm64_bundle.tar.gz.sha256"
+            # 打包标准通用全量包
+            tar -czvf "out/vohive_openstick_arm64_bundle.tar.gz" "${BUNDLE_DIR}"
+            sha256sum "out/vohive_openstick_arm64_bundle.tar.gz" > "out/vohive_openstick_arm64_bundle.tar.gz.sha256"
+
+            # 保持对旧名称 vohive_sp970_arm64_bundle 的向后兼容发布
+            cp "out/vohive_openstick_arm64_bundle.tar.gz" "out/vohive_sp970_arm64_bundle.tar.gz"
+            cp "out/vohive_openstick_arm64_bundle.tar.gz.sha256" "out/vohive_sp970_arm64_bundle.tar.gz.sha256"
           fi
 
       - name: Upload artifact

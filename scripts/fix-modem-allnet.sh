@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# 高通 MSM8916 (板载丝印 SP970-B-V13) 随身 WiFi 棒子一键初始化与加固脚本
+# 高通 410 (MSM8916 / OpenStick 全系) 随身 WiFi 棒子一键初始化与加固脚本
 # 功能：频段锁 Band 1+3 (剔除电信 Band 5) + 自动选网 + 防漫游流量 + 防 CPU 100% 死循环
 # 适用环境：Debian / Armbian 系统 (ARM64 / aarch64) + VoHive
 # ==============================================================================
@@ -12,7 +12,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "======================================================================"
-echo "[*] 高通 410 (SP970-B-V13) 随身 WiFi 硬件环境初始化与加固"
+echo "[*] 高通 410 (MSM8916 / OpenStick) 随身 WiFi 硬件环境初始化与加固"
 echo "======================================================================"
 
 # 1. 检查并安装必要依赖
@@ -67,7 +67,7 @@ fi
 echo "[+] 5. 正在配置动态默认网关心跳探活机制 (防止 AP 脱网/假死)..."
 cat << 'EOF' > /usr/local/bin/wifi-keepalive.sh
 #!/bin/bash
-# VoHive WiFi 动态网关探活保活脚本 (MSM8916 SP970)
+# VoHive WiFi 动态网关探活保活脚本 (MSM8916 OpenStick)
 # 自动探测当前实际默认网关，适配不同路由环境 (如 192.168.1.1 / 192.168.10.1 / 10.x.x.x 等)
 GW=$(ip route show default 2>/dev/null | awk '/default/ {print $3}' | head -n 1)
 [ -z "$GW" ] && GW=$(ip route 2>/dev/null | grep -E '^default' | awk '{print $3}' | head -n 1)
@@ -88,13 +88,13 @@ systemctl restart cron 2>/dev/null || systemctl restart crond 2>/dev/null || tru
 # 6. 优化系统虚拟内存与 Swap 换页参数 (适配 376MB 小内存，防缺页回收卡死)
 echo "[+] 6. 正在优化系统虚拟内存与 Swap 参数 (适配低内存环境)..."
 mkdir -p /etc/sysctl.d
-cat << 'EOF' > /etc/sysctl.d/99-vohive-sp970.conf
+cat << 'EOF' > /etc/sysctl.d/99-vohive-msm8916.conf
 # 针对高通 410 (376MB 可用内存) 的系统级虚拟内存调优
 # 充分利用 zram 压缩内存，防止小内存直接回收（Direct Reclaim）卡死
 vm.swappiness = 100
 vm.vfs_cache_pressure = 50
 EOF
-sysctl -p /etc/sysctl.d/99-vohive-sp970.conf >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1 || true
+sysctl -p /etc/sysctl.d/99-vohive-msm8916.conf >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1 || true
 
 # 7. 部署 LTE 频段锁定工具 (lock-band3)
 echo "[+] 7. 正在配置 LTE 频段锁定工具 (lock-band3)..."
@@ -336,7 +336,7 @@ echo "[+] 11. 正在首次执行初始化与驻网测试..."
 /usr/local/bin/modem-init.sh
 
 echo "======================================================================"
-echo "[√] 高通 410 (SP970-B-V13) 随身 WiFi 环境初始化完成！"
+echo "[√] 高通 410 (MSM8916 / OpenStick) 随身 WiFi 环境初始化完成！"
 echo "    - 频段策略：Band 1+3 (彻底剔除电信 Band 5 搜网死锁)"
 echo "    - 选网模式：自动适配 (漫游卡锁定中国联通 46001)"
 echo "    - 数据网络：保持断开，0 流量消耗，仅接收短信"

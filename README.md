@@ -39,8 +39,8 @@ sudo bash install.sh
 #### 2. 离线整合包安装（推荐随身 WiFi 使用）：
 从 [Releases 页面](https://github.com/llkhs/vohive-open/releases) 下载一站式全量包并解压安装：
 ```bash
-tar -zxvf vohive_sp970_arm64_bundle.tar.gz
-cd vohive_sp970_arm64
+tar -zxvf vohive_openstick_arm64_bundle.tar.gz
+cd vohive_openstick_arm64
 sudo bash install.sh
 ```
 
@@ -143,7 +143,7 @@ cd .. && rm -rf vohive
 
 ## 硬件适配指南
 
-- **[高通 410 (MSM8916) 随身 WiFi 棒子 (丝印 SP970-B-V13) 适配与加固指南](docs/hardware/qualcomm-410-sp970-b-v13.md)**: 针对搭载高通骁龙 410 (MSM8916) 芯片、板载丝印为 **`SP970-B-V13`** 的随身 WiFi 棒子在部署 Debian/Armbian 时的掉卡、Band 5 电信定制固件搜网死锁、CPU 100% 狂转高负载发烫、WiFi 掉线休眠以及境外漫游卡防高额流量消耗等问题，提供完整的根因分析、专用频段锁与一键配置加固方案。
+- **[高通 410 (MSM8916 / OpenStick) 随身 WiFi 全系适配与加固指南](docs/hardware/qualcomm-410-msm8916-openstick.md)**: 全面支持搭载高通骁龙 410 (MSM8916) 芯片的各类随身 WiFi 设备（涵盖 **UFI001C, UFI003, SP970, UZ801, Handsome** 等系列），针对外部/板载双 SIM 槽切换、搜网死锁、CPU 100% 狂转高负载发烫、WiFi 休眠掉线以及实体/漫游 eSIM 卡支持等问题，提供完整的根因分析、引脚固化与一键部署加固方案。
 
 ---
 

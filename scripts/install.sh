@@ -3,7 +3,7 @@
 # VoHive 一键全自动快速安装与硬件调优部署脚本 (All-in-One)
 # 适用平台：Linux (ARM64 / aarch64, x86_64 / amd64, ARMv7)
 # 默认端口：7676
-# 特别集成：原生内置高通 410 (MSM8916 / SP970-B-V13) 随身 WiFi 全套加固与防死机调优
+# 特别集成：原生内置高通 410 (MSM8916 / OpenStick 全系: UFI001C, UFI003, SP970, UZ801 等) 随身 WiFi 全套加固与防死机调优
 # ==============================================================================
 
 set -e
@@ -158,7 +158,7 @@ elif [ -e "/dev/wwan0qmi0" ]; then
     chmod +x /usr/local/bin/lock-band3
     echo "[✓] lock-band3 下载并配置成功"
   else
-    echo "[!] 警告：未找到 lock-band3！高通 SP970 棒子若缺少频段锁，可能被电信 Band 5 信号捕获导致搜网死锁！"
+    echo "[!] 警告：未找到 lock-band3！高通 410 随身 WiFi 棒子若缺少频段工具，可能被电信 Band 5 信号捕获导致搜网死锁！"
   fi
 fi
 
@@ -372,11 +372,11 @@ EOF_CRON
   # 5. 优化系统虚拟内存与 Swap 参数 (适配 376MB 小内存，防缺页回收卡死)
   echo "[+] 5. 优化系统虚拟内存与 Swap 参数 (适配低内存环境)..."
   mkdir -p /etc/sysctl.d
-  cat << 'EOF_SYSCTL' > /etc/sysctl.d/99-vohive-sp970.conf
+  cat << 'EOF_SYSCTL' > /etc/sysctl.d/99-vohive-msm8916.conf
 vm.swappiness = 100
 vm.vfs_cache_pressure = 50
 EOF_SYSCTL
-  sysctl -p /etc/sysctl.d/99-vohive-sp970.conf >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1 || true
+  sysctl -p /etc/sysctl.d/99-vohive-msm8916.conf >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1 || true
 
   # 6. 配置 LTE 频段策略 (Band 1+3，排除 Band 5 死锁)
   if [ -x /usr/local/bin/lock-band3 ]; then
@@ -520,7 +520,7 @@ echo "    配置文件路径：$CONFIG_PATH"
 echo "    日志查看命令：journalctl -u vohive -f"
 if [ -e "/dev/wwan0qmi0" ] || [ -e "/dev/wwan0at0" ]; then
   echo "----------------------------------------------------------------------"
-  echo "[*] 高通 SP970 硬件一体化加固完成项："
+  echo "[*] 高通 410 (MSM8916 / OpenStick) 硬件一体化加固完成项："
   echo "    - 频段策略：Band 1+3 (彻底剔除电信 Band 5 搜网死锁)"
   echo "    - 选网模式：自动适配 (漫游卡锁定中国联通 46001 / 移动 46000)"
   echo "    - 流量防护：纯驻网收发短信，0 流量消耗"
