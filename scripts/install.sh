@@ -309,8 +309,15 @@ if [ -e "/dev/wwan0qmi0" ] || [ -e "/dev/wwan0at0" ]; then
   echo "[+] 1. 禁用系统自带 ModemManager，防止与 VoHive 发生串口/QMI 冲突..."
   systemctl disable --now ModemManager 2>/dev/null || true
 
-  # 2. 根除 NetworkManager 蜂窝自动拨号无限死循环
+  # 2. 根除 NetworkManager 蜂窝自动拨号无限死循环 (写入全局 conf.d 规则)
   echo "[+] 2. 关闭 NetworkManager 蜂窝自动拨号，解除 CPU 100% 狂转死循环..."
+  mkdir -p /etc/NetworkManager/conf.d
+  cat << 'EOF_NM_MODEM' > /etc/NetworkManager/conf.d/99-disable-modem-autoconnect.conf
+[connection-modem-noauto]
+match-device=type:gsm
+connection.autoconnect=false
+connection.autoconnect-retries=0
+EOF_NM_MODEM
   if command -v nmcli >/dev/null 2>&1; then
     nmcli connection modify modem connection.autoconnect no 2>/dev/null || true
     nmcli connection modify modem connection.autoconnect-retries 0 2>/dev/null || true
@@ -446,8 +453,20 @@ exit 0
 EOF_MODEM_INIT
   chmod +x /usr/local/bin/modem-init.sh
 
-  # 8. 配置开机自启 systemd 单元 /etc/systemd/system/modem-init.service
-  echo "[+] 8. 配置开机自启 systemd 单元 /etc/systemd/system/modem-init.service ..."
+  # 8. 配置 VoHive 专有资源硬隔离 (限制 CPUQuota 与 MemoryMax，防止 ARM64 随身 WiFi 卡死)
+  echo "[+] 8. 为 VoHive 注入 ARM64 随身 WiFi 专有资源防护 (CPUQuota=60%, MemoryMax=100M)..."
+  mkdir -p /etc/systemd/system/vohive.service.d
+  cat << 'EOF_VOHIVE_LIMIT' > /etc/systemd/system/vohive.service.d/10-arm64-resource-limit.conf
+[Service]
+# 限制单核最大占用，保障系统 SSH 与基础服务在极端情况下不夯机
+CPUQuota=60%
+# 针对 384MB 小内存环境设置内存硬隔离，防 OOM 崩溃
+MemoryMax=100M
+MemoryHigh=80M
+EOF_VOHIVE_LIMIT
+
+  # 9. 配置开机自启 systemd 单元 /etc/systemd/system/modem-init.service
+  echo "[+] 9. 配置开机自启 systemd 单元 /etc/systemd/system/modem-init.service ..."
   cat << 'EOF_MODEM_SVC' > /etc/systemd/system/modem-init.service
 [Unit]
 Description=Qualcomm MSM8916 Modem Auto-Init Service
@@ -467,10 +486,13 @@ EOF_MODEM_SVC
   systemctl daemon-reload
   systemctl enable modem-init.service 2>/dev/null || true
 
-  # 9. 清空 /etc/rc.local 避免重复竞态运行
-  echo "[+] 9. 确保清空 /etc/rc.local 避免重复竞态运行..."
+  # 10. 安全更新 /etc/rc.local (保留物理 SIM 选通与硬件初始化)
+  echo "[+] 10. 配置 /etc/rc.local 硬件自愈脚本..."
   cat << 'EOF_RCLOCAL' > /etc/rc.local
 #!/bin/sh -e
+# 若硬件包含 sim:sel/sim:en 则优先选通物理卡并上电
+[ -e /sys/class/leds/sim:sel/brightness ] && echo 0 > /sys/class/leds/sim:sel/brightness 2>/dev/null || true
+[ -e /sys/class/leds/sim:en/brightness ] && echo 1 > /sys/class/leds/sim:en/brightness 2>/dev/null || true
 exit 0
 EOF_RCLOCAL
   chmod +x /etc/rc.local

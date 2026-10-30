@@ -993,10 +993,13 @@ function applyDiscoveredToAddConfig(d: DiscoveredDevice | null) {
   const mode = String(d.mode || '').toLowerCase()
   if (mode === 'mbim') {
     addConfig.value.device_backend = 'mbim'
+    addConfig.value.esim_transport = 'mbim'
   } else if (isWwanQmiControlPath(d.control_path) || (mode === 'qmi' && d.control_path)) {
     addConfig.value.device_backend = 'qmi'
+    addConfig.value.esim_transport = 'qmi'
   } else {
     addConfig.value.device_backend = 'at'
+    addConfig.value.esim_transport = 'at'
   }
 }
 
