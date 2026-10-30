@@ -524,7 +524,7 @@ func (m *Manager) Start() error {
 		m.mu.Lock()
 		m.desiredConnection = true
 		m.mu.Unlock()
-		m.eventCh <- eventStart
+		m.sendInternalEvent(eventStart)
 	} else {
 		m.log.Info("NoDial mode enabled, core started without initial connection")
 	}
@@ -592,6 +592,21 @@ func (m *Manager) StartCoreContext(ctx context.Context) error {
 }
 
 // Stop gracefully stops the connection manager / Stop 优雅停止连接管理器
+func (m *Manager) sendInternalEvent(evt internalEvent) bool {
+	if m == nil || m.eventCh == nil {
+		return false
+	}
+	select {
+	case <-m.ctx.Done():
+		return false
+	case m.eventCh <- evt:
+		return true
+	default:
+		m.log.Warnf("Internal event queue full, dropping event %v", evt)
+		return false
+	}
+}
+
 func (m *Manager) Stop() error {
 	m.mu.Lock()
 	wasStopping := m.state == StateStopping
@@ -617,8 +632,17 @@ func (m *Manager) Stop() error {
 		}
 	}
 
-	// Wait for loops to finish / 等待循环结束
-	m.wg.Wait()
+	// Wait for loops to finish with timeout protection / 带超时保护等待循环结束
+	done := make(chan struct{})
+	go func() {
+		m.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		m.log.Warn("Timed out waiting for QMI loops to finish, forcing teardown")
+	}
 
 	m.cleanup()
 	if m.events != nil {
@@ -2926,7 +2950,7 @@ func (m *Manager) eventLoop() {
 			m.handleEvent(evt)
 
 		case <-checkTimer.C:
-			m.eventCh <- eventCheckFull
+			m.sendInternalEvent(eventCheckFull)
 			checkTimer.Reset(jitteredFullCheckInterval(m.cfg.HealthPolicy.FullCheckInterval))
 		}
 	}
@@ -3160,7 +3184,7 @@ func (m *Manager) doRecoverFromModemReset() bool {
 	m.setState(StateDisconnected)
 	if desiredConnection && m.cfg.AutoReconnect {
 		m.scheduleAfter(2*time.Second, func() {
-			m.eventCh <- eventStart
+			m.sendInternalEvent(eventStart)
 		})
 	} else {
 		m.log.Info("QMI core recovered without reconnecting data plane")
@@ -3748,7 +3772,7 @@ func (m *Manager) doStatusCheck(full bool) {
 					m.mu.RUnlock()
 					if m.cfg.AutoReconnect && desiredConnection && !isStopping {
 						m.emitEvent(Event{Type: EventReconnecting, State: StateDisconnected, Error: err})
-						m.eventCh <- eventStart
+						m.sendInternalEvent(eventStart)
 					}
 				} else {
 					m.mu.Lock()
@@ -3771,7 +3795,7 @@ func (m *Manager) doStatusCheck(full bool) {
 			m.mu.RUnlock()
 			if m.cfg.AutoReconnect && desiredConnection && !isStopping {
 				m.emitEvent(Event{Type: EventReconnecting, State: StateDisconnected})
-				m.eventCh <- eventStart
+				m.sendInternalEvent(eventStart)
 			}
 		}
 	}
@@ -3819,7 +3843,7 @@ func (m *Manager) handleDialFailure(err error) {
 	m.reconnectScheduled.Add(1)
 
 	m.scheduleAfter(delay, func() {
-		m.eventCh <- eventStart
+		m.sendInternalEvent(eventStart)
 	})
 }
 
@@ -3885,7 +3909,7 @@ func (m *Manager) handleIndication(evt qmi.Event) {
 			}
 		}
 		m.emitEvent(event)
-		m.eventCh <- eventPacketStatusChanged
+		m.sendInternalEvent(eventPacketStatusChanged)
 
 	case qmi.EventServingSystemChanged:
 		event := m.qmiIndicationEvent(EventServingSystemChanged, evt)
@@ -3986,7 +4010,7 @@ func (m *Manager) handleIndication(evt qmi.Event) {
 			m.maybeSchedulePostRegRefresh(previousServing, event.ServingSystem, "serving_indication")
 		}
 		m.emitEvent(event)
-		m.eventCh <- eventServingSystemChanged
+		m.sendInternalEvent(eventServingSystemChanged)
 
 	case qmi.EventNASOperatorNameChanged:
 		event := m.qmiIndicationEvent(EventNASOperatorNameChanged, evt)

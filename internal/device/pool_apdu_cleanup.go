@@ -32,6 +32,9 @@ func cleanupWorkerStartupSIMAuthLogicalChannels(w *Worker) {
 	if w == nil || w.Backend == nil {
 		return
 	}
+	if !w.Config.VoWiFiEnabled {
+		return
+	}
 	if w.QMICore != nil {
 		performStartupQMIUIMReset(w.ID, w.QMICore, w.QMICore, startupQMISIMReadyCheck(w.QMICore), 5*time.Second, 250*time.Millisecond)
 		return

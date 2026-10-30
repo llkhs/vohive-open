@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -320,6 +321,9 @@ func (m *Manager) GetICCIDStrictLive(ctx context.Context) (string, error) {
 		return iccid, nil
 	}
 	lastErr = err
+	if lastErr != nil && strings.Contains(strings.ToLower(lastErr.Error()), "uimuninitialized") {
+		return "", fmt.Errorf("SIM 尚未初始化 (UimUninitialized)，安全跳过 UIM 直读以保护基带稳定")
+	}
 
 	iccid, err = withUIMRecoveryValue(m, "GetICCID", func(uim *qmi.UIMService) (string, error) {
 		return uim.GetICCID(ctx)

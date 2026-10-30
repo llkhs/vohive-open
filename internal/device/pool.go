@@ -1023,7 +1023,16 @@ func (p *Pool) RemoveWorker(deviceID string) error {
 		_ = worker.ESIMQMITransport.Stop()
 	}
 	if worker.QMICore != nil {
-		worker.QMICore.Stop()
+		stopDone := make(chan struct{})
+		go func() {
+			_ = worker.QMICore.Stop()
+			close(stopDone)
+		}()
+		select {
+		case <-stopDone:
+		case <-time.After(3 * time.Second):
+			logger.Warn("设备移除时停止 QMICore 超时 (3s)，强制继续后续流程", "device", deviceID)
+		}
 	}
 	if worker.MBIMCore != nil {
 		_ = worker.MBIMCore.Close()
