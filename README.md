@@ -193,6 +193,15 @@ GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 \
 
 ---
 
+## 🤝 贡献与致谢 (Contributors & Credits)
+
+本项目由社区与 AI 结对编程协作演进：
+
+- **[@llkhs](https://github.com/llkhs)** — 核心架构设计、项目维护与实机真机验证
+- **[Google Gemini](https://deepmind.google/technologies/gemini/) (DeepMind Antigravity)** — 全栈协同研发、高通 410 (MSM8916 / OpenStick) 硬件底层生态驱动与全系加固调优 (AI Pair Programmer & Co-author)
+
+---
+
 ## 免责声明
 
 - **用途定义**: 本项目主要面向个人学习、技术研究与功能测试场景，不建议直接用于生产环境或关键业务系统；由此产生的部署及使用风险由使用者自行承担。
