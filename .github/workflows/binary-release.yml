@@ -16,16 +16,6 @@ on:
         description: 'Enable UPX compression (true/false)'
         required: false
         default: 'false'
-      target_arch:
-        description: 'Target architecture to build (all, arm64, amd64, armv7)'
-        type: choice
-        required: false
-        default: 'all'
-        options:
-          - all
-          - arm64
-          - amd64
-          - armv7
       publish_release:
         description: 'Publish a GitHub Release for this manual build'
         type: boolean
@@ -72,7 +62,6 @@ jobs:
     name: Build ${{ matrix.artifact_arch }}
     runs-on: ubuntu-24.04
     needs: frontend
-    if: github.event_name != 'workflow_dispatch' || github.event.inputs.target_arch == 'all' || github.event.inputs.target_arch == matrix.artifact_arch
     strategy:
       fail-fast: false
       matrix:
