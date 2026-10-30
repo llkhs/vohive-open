@@ -35,9 +35,6 @@ on:
 permissions:
   contents: write
 
-env:
-  ACTIONS_RUNNER_FORCE_NODE24: "0"
-
 concurrency:
   group: binary-release-${{ github.ref }}
   cancel-in-progress: true

@@ -166,36 +166,12 @@ fi
 if [ ! -f "$CONFIG_PATH" ]; then
   echo "[*] 写入全新默认配置文件 (Web 端口: $PORT)..."
 
+  # 遵循最小配置原则：默认保持 devices: [] 纯净初始化
+  # 避免在配置文件中塞入参数不全的半成品设备导致"设备启动中"假死。
+  # 模组建议进入 Web 管理界面后，由【设备管理 -> 添加设备】通过自动发现一键无缝接入。
   DEVICE_SECTION="devices: []"
-  if [ -e "/dev/wwan0qmi0" ]; then
-    echo "[+] 检测到高通 QMI 调制解调器 (/dev/wwan0qmi0)，正在探测设备 IMEI 并自动配置 wwan0 设备..."
-    PROBED_IMEI=""
-    if command -v qmicli >/dev/null 2>&1; then
-      PROBED_IMEI=$(qmicli -p -d /dev/wwan0qmi0 --dms-get-ids 2>/dev/null | grep -i "IMEI:" | awk -F"'" '{print $2}' | tr -d ' \r\n' || true)
-      [ -z "$PROBED_IMEI" ] && PROBED_IMEI=$(qmicli -d /dev/wwan0qmi0 --dms-get-ids 2>/dev/null | grep -i "IMEI:" | awk -F"'" '{print $2}' | tr -d ' \r\n' || true)
-    fi
-
-    if [ -n "$PROBED_IMEI" ]; then
-      echo "    [✓] 成功探测到基带 IMEI: $PROBED_IMEI"
-      DEVICE_SECTION=$(cat << DEVEOF
-devices:
-  - id: wwan0
-    modem_imei: "$PROBED_IMEI"
-    device_backend: qmi
-    qmi_use_proxy: true
-    operator_selection_mode: automatic
-DEVEOF
-)
-    else
-      DEVICE_SECTION=$(cat << 'DEVEOF'
-devices:
-  - id: wwan0
-    device_backend: qmi
-    qmi_use_proxy: true
-    operator_selection_mode: automatic
-DEVEOF
-)
-    fi
+  if [ -e "/dev/wwan0qmi0" ] || [ -e "/dev/wwan0at0" ]; then
+    echo "[*] 检测到底层蜂窝模组硬件，默认保持 devices 纯净，服务启动后可直接在 Web 管理后台自动发现并添加。"
   fi
 
   cat > "$CONFIG_PATH" <<EOF
