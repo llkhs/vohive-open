@@ -345,6 +345,33 @@ func (p *Pool) AddWorkerFromConfig(devCfg config.DeviceConfig) (*Worker, error) 
 		if matched == nil {
 			return nil, fmt.Errorf("未找到匹配 IMEI 的设备: %s", imei)
 		}
+	} else if requiresQMICore(devCfg) {
+		// 当未显式配置 IMEI 时（如随身 WiFi 单板或初始配置）：自动认领未被占用的可用 QMI 硬件
+		if list, err := discoveryCache.Get(); err == nil {
+			for i := range list {
+				_, claimedByLive := liveWorkerIndex.Lookup(list[i].ControlPath, list[i].USBPath, list[i].NetInterface)
+				configuredID := configuredIndex.Lookup(list[i].ControlPath, list[i].USBPath, list[i].NetInterface, "")
+				if claimedByLive || (configuredID != "" && configuredID != devCfg.ID) {
+					continue
+				}
+				d, got := resolveDiscoveredQMIDeviceWithConfig(list[i], 1600*time.Millisecond, true, devCfg)
+				matched = &d
+				devCfg.Interface = d.NetInterface
+				devCfg.ControlDevice = d.ControlPath
+				devCfg.QMIDevice = d.ControlPath
+				if devCfg.USBPath == "" {
+					devCfg.USBPath = d.USBPath
+				}
+				devCfg.ATPort = d.ATPort
+				devCfg.ManagePort = d.ATPort
+				if got != "" {
+					devCfg.ModemIMEI = got
+				}
+				logger.Info(fmt.Sprintf("[%s] 未显式配置 IMEI，已自动认领 QMI 硬件设备并补全参数", devCfg.ID),
+					"control_device", d.ControlPath, "interface", d.NetInterface, "imei", got)
+				break
+			}
+		}
 	}
 	if matched != nil {
 		devCfg = applyQMIManagedAttachment(devCfg, *matched)
