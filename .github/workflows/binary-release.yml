@@ -176,6 +176,7 @@ jobs:
             [ -f "dist/lock-band3" ] && cp dist/lock-band3 "${BUNDLE_DIR}/lock-band3"
             [ -f "scripts/mcc-mnc-table.json" ] && cp scripts/mcc-mnc-table.json "${BUNDLE_DIR}/"
             [ -f "scripts/install.sh" ] && cp scripts/install.sh "${BUNDLE_DIR}/"
+            [ -f "scripts/uninstall.sh" ] && cp scripts/uninstall.sh "${BUNDLE_DIR}/"
             [ -f "scripts/fix-modem-allnet.sh" ] && cp scripts/fix-modem-allnet.sh "${BUNDLE_DIR}/"
             mkdir -p "${BUNDLE_DIR}/hardware"
             [ -f "scripts/hardware/openstick-msm8916-setup.sh" ] && cp scripts/hardware/openstick-msm8916-setup.sh "${BUNDLE_DIR}/hardware/"
