@@ -93,6 +93,15 @@ docker compose up -d
   sudo journalctl -u vohive -f    # 实时查看运行日志
   ```
 
+### 随身 WiFi (MSM8916) 独立基带调优与恢复工具
+
+针对高通 410 (MSM8916 / OpenStick 全系) 随身 WiFi 用户，本项目提供独立的基带调优与原厂还原工具。无论是否使用 VoHive，均可独立运行以解决随身 WiFi 常见的 **掉卡、断网、CPU 100% 满载发热、QMI/串口争抢、Hexagon DSP 崩溃** 等问题：
+
+```bash
+# 运行独立配置工具（提供交互菜单：1. 优化基带硬件  2. 恢复原厂设置）
+curl -fsSL https://raw.githubusercontent.com/llkhs/vohive-open/main/scripts/hardware/openstick-msm8916-setup.sh | sudo bash
+```
+
 ---
 
 ## 卸载方式
@@ -101,28 +110,29 @@ docker compose up -d
 
 ### 1. 系统服务模式（脚本安装）的完全卸载
 
-以 `root` 权限依次执行以下命令：
+**推荐方法：一键卸载脚本（自动支持基带与硬件原厂还原）**
+```bash
+# 执行一键卸载（会自动提示是否同时恢复随身 WiFi 原厂基带设置）
+curl -fsSL https://raw.githubusercontent.com/llkhs/vohive-open/main/scripts/uninstall.sh | sudo bash
+```
 
+**手动卸载与清理命令：**
 ```bash
 # 步骤 1：停止并彻底禁用 VoHive 主服务
 sudo systemctl disable --now vohive 2>/dev/null || true
-
-# 步骤 2：删除 systemd 服务注册文件并重载系统服务管理
 sudo rm -f /etc/systemd/system/vohive.service
+sudo rm -rf /etc/systemd/system/vohive.service.d
 sudo systemctl daemon-reload
 
-# 步骤 3：清理安装目录、二进制文件及数据文件
+# 步骤 2：清理安装目录、二进制文件及数据文件
 # （注意：如需保留短信记录或配置文件，请先备份 /opt/vohive/data 和 /opt/vohive/config）
 sudo rm -rf /opt/vohive
 
-# 步骤 4：（可选）若使用了随身 WiFi 硬件初始化守护服务，一并清理
-sudo systemctl disable --now modem-init.service 2>/dev/null || true
-sudo rm -f /etc/systemd/system/modem-init.service
-sudo rm -f /usr/local/bin/modem-init.sh
-sudo rm -f /usr/local/bin/lock-band3
-sudo systemctl daemon-reload
+# 步骤 3：（随身 WiFi 专属）使用官方调优工具一键恢复原厂基带设置
+# 若需将随身 WiFi 恢复为普通原厂 USB 上网卡（恢复蜂窝自动拨号/解除频段锁）：
+curl -fsSL https://raw.githubusercontent.com/llkhs/vohive-open/main/scripts/hardware/openstick-msm8916-setup.sh | sudo bash -s -- --restore
 
-echo "[✓] VoHive 及相关组件已完全卸载清理干净！"
+echo "[✓] VoHive 及相关组件已完全卸载，基带环境已恢复原厂！"
 ```
 
 ---
