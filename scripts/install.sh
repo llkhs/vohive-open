@@ -394,17 +394,24 @@ done
 
 [ ! -e "$QMI_DEV" ] && exit 0
 
-# 2. 确保 DMS 在线模式
-qmicli -p -d "$QMI_DEV" --dms-set-operating-mode=online >/dev/null 2>&1 || true
-
-# 3. 检查 SIM 卡槽状态，若处于 absent 则自动触发一次重新上电触发 ATR 探测
-CARD_STATUS=$(qmicli -p -d "$QMI_DEV" --uim-get-card-status 2>/dev/null || true)
-if echo "$CARD_STATUS" | grep -q "Card state: 'absent'"; then
-    qmicli -p -d "$QMI_DEV" --uim-sim-power-off=1 >/dev/null 2>&1 || true
-    sleep 1
-    qmicli -p -d "$QMI_DEV" --uim-sim-power-on=1 >/dev/null 2>&1 || true
+# 2. 确保基带射频处于 online 模式（严禁处于 low-power 或 shutting-down）
+for i in $(seq 1 5); do
+    OP_MODE=$(qmicli -p -d "$QMI_DEV" --dms-get-operating-mode 2>/dev/null || true)
+    if echo "$OP_MODE" | grep -q "Mode: 'online'"; then
+        break
+    fi
+    qmicli -p -d "$QMI_DEV" --dms-set-operating-mode=online >/dev/null 2>&1 || true
     sleep 2
-fi
+done
+
+# 3. 等待 SIM 卡自动初始化就绪（绝不下发破坏性的 uim-sim-power-off，避免触发 Hexagon DSP sys_m 复位）
+for i in $(seq 1 15); do
+    CARD_STATUS=$(qmicli -p -d "$QMI_DEV" --uim-get-card-status 2>/dev/null || true)
+    if echo "$CARD_STATUS" | grep -q "Card state: 'present'"; then
+        break
+    fi
+    sleep 1
+done
 
 # 4. 锁定 LTE 频段为 Band 1+3
 [ -x /usr/local/bin/lock-band3 ] && /usr/local/bin/lock-band3 >/dev/null 2>&1 || true
@@ -487,13 +494,15 @@ EOF_MODEM_SVC
   systemctl daemon-reload
   systemctl enable modem-init.service 2>/dev/null || true
 
-  # 10. 安全更新 /etc/rc.local (保留物理 SIM 选通与硬件初始化)
+  # 10. 安全更新 /etc/rc.local (保留物理 Nano-SIM 选通与硬件初始化)
   echo "[+] 10. 配置 /etc/rc.local 硬件自愈脚本..."
   cat << 'EOF_RCLOCAL' > /etc/rc.local
 #!/bin/sh -e
-# 若硬件包含 sim:sel/sim:en 则优先选通物理卡并上电
-[ -e /sys/class/leds/sim:sel/brightness ] && echo 0 > /sys/class/leds/sim:sel/brightness 2>/dev/null || true
-[ -e /sys/class/leds/sim:en/brightness ] && echo 1 > /sys/class/leds/sim:en/brightness 2>/dev/null || true
+# 选通外部物理 Nano-SIM 卡槽 (SEL=1, EN=0)
+[ -e /sys/class/leds/sim:sel/brightness ] && echo 1 > /sys/class/leds/sim:sel/brightness 2>/dev/null || true
+[ -e /sys/class/leds/sim:en/brightness ] && echo 0 > /sys/class/leds/sim:en/brightness 2>/dev/null || true
+[ -e /sys/class/leds/sim:sel2/brightness ] && echo 0 > /sys/class/leds/sim:sel2/brightness 2>/dev/null || true
+[ -e /sys/class/leds/sim:en2/brightness ] && echo 0 > /sys/class/leds/sim:en2/brightness 2>/dev/null || true
 exit 0
 EOF_RCLOCAL
   chmod +x /etc/rc.local
